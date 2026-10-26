@@ -69,3 +69,7 @@ CSV e Excel exportam toda a seleção filtrada até 10.000 registros. PDF pagina
 ## Rollback
 
 Desative a coleta com `FINANCIAL_SYNC_ENABLED=0`, reinicie o processo e reverta o commit do módulo ou restaure o ZIP de código anterior. Mantenha as tabelas novas: isso preserva os registros e a auditoria e não interfere no código anterior. Não execute DROP, reset ou restauração automática do banco antigo. O backup anterior é um ponto de recuperação a ser usado em cópia isolada; restaurá-lo sobre o banco vivo descartaria coletas posteriores.
+
+## Saúde do serviço
+
+O endpoint `/api/health` usa uma leitura leve (`database_check=read_probe`) e informa explicitamente `integrity_check=not_run`. Uma verificação completa de integridade de um banco financeiro grande não deve ser executada em cada healthcheck do contêiner. A integridade completa é conferida separadamente na validação e no backup.

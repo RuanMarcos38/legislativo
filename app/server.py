@@ -73,7 +73,9 @@ class Handler(BaseHTTPRequestHandler):
                 name={"/":"index.html","/app.js":"app.js","/financial.js":"financial.js","/style.css":"style.css"}[u.path]
                 return self.respond((ROOT/"web"/name).read_text(encoding="utf8"),ctype='text/javascript; charset=utf-8' if name.endswith('.js') else 'text/css; charset=utf-8' if name.endswith('.css') else 'text/html; charset=utf-8')
             with connect() as db:
-                if u.path=="/api/health": return self.respond({"status":"ok","database":db.execute("PRAGMA integrity_check").fetchone()[0],"mode":"local_authenticated"})
+                if u.path=="/api/health":
+                    db.execute("SELECT 1").fetchone()
+                    return self.respond({"status":"ok","database":"ok","database_check":"read_probe","integrity_check":"not_run","mode":"local_authenticated"})
                 if u.path=="/api/session":
                     user=self.current_user(db)
                     return self.respond({"user":user,"plan":auth.plan(db,user) if user else None})
