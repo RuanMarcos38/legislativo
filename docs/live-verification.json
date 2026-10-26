@@ -1,0 +1,142 @@
+{
+  "verified_at": "2026-10-26T12:44:18.764000+00:00",
+  "integrity": "ok",
+  "sources": [
+    {
+      "id": "camara",
+      "name": "Câmara dos Deputados",
+      "url": "https://dadosabertos.camara.leg.br/swagger/api.html",
+      "note": "Conector parcial: deputados, proposições e votações. Detalhes sob demanda.",
+      "counts": {
+        "document": 4,
+        "person": 513,
+        "proposal": 100,
+        "vote": 78
+      },
+      "status": "partial",
+      "first_collected": "2026-10-26T12:25:30.724473+00:00",
+      "last_collected": "2026-10-26T12:44:20.637827+00:00",
+      "observed_years": [
+        "2026"
+      ],
+      "historical_coverage": "Não aferida; anos observados não comprovam cobertura completa."
+    },
+    {
+      "id": "senado",
+      "name": "Senado Federal",
+      "url": "https://www12.senado.leg.br/dados-abertos",
+      "note": "Conector parcial: senadores em exercício e perfil. Matérias e votações ainda não integradas.",
+      "counts": {
+        "document": 1,
+        "person": 81
+      },
+      "status": "partial",
+      "first_collected": "2026-10-26T12:25:29.343412+00:00",
+      "last_collected": "2026-10-26T12:44:19.789249+00:00",
+      "observed_years": [],
+      "historical_coverage": "Não aferida; anos observados não comprovam cobertura completa."
+    },
+    {
+      "id": "tse",
+      "name": "TSE",
+      "url": "https://dadosabertos.tse.jus.br/",
+      "note": "Não integrado. Candidatura não equivale a exercício de mandato.",
+      "counts": {},
+      "status": "not_integrated",
+      "first_collected": null,
+      "last_collected": null,
+      "observed_years": [],
+      "historical_coverage": "Não aferida; anos observados não comprovam cobertura completa."
+    },
+    {
+      "id": "planalto",
+      "name": "Planalto",
+      "url": "https://www4.planalto.gov.br/legislacao/",
+      "note": "Não integrado. Conversão de propostas em leis não verificada.",
+      "counts": {},
+      "status": "not_integrated",
+      "first_collected": null,
+      "last_collected": null,
+      "observed_years": [],
+      "historical_coverage": "Não aferida; anos observados não comprovam cobertura completa."
+    },
+    {
+      "id": "lexml",
+      "name": "LexML",
+      "url": "https://www.lexml.gov.br/",
+      "note": "Não integrado.",
+      "counts": {},
+      "status": "not_integrated",
+      "first_collected": null,
+      "last_collected": null,
+      "observed_years": [],
+      "historical_coverage": "Não aferida; anos observados não comprovam cobertura completa."
+    },
+    {
+      "id": "estados",
+      "name": "Assembleias / CLDF",
+      "url": "https://www.interlegis.leg.br/",
+      "note": "Nenhuma Casa estadual conectada.",
+      "counts": {},
+      "status": "not_integrated",
+      "first_collected": null,
+      "last_collected": null,
+      "observed_years": [],
+      "historical_coverage": "Não aferida; anos observados não comprovam cobertura completa."
+    },
+    {
+      "id": "municipios",
+      "name": "Câmaras municipais / SAPL",
+      "url": "https://www.interlegis.leg.br/",
+      "note": "Nenhum município conectado; cadastro geográfico nacional pendente.",
+      "counts": {},
+      "status": "not_integrated",
+      "first_collected": null,
+      "last_collected": null,
+      "observed_years": [],
+      "historical_coverage": "Não aferida; anos observados não comprovam cobertura completa."
+    }
+  ],
+  "documents": [
+    {
+      "id": "camara:person:104552",
+      "url": "https://dadosabertos.camara.leg.br/api/v2/deputados/104552",
+      "section": "detail",
+      "status": "received",
+      "keys": [
+        "dados",
+        "links"
+      ]
+    },
+    {
+      "id": "senado:person:1173",
+      "url": "https://legis.senado.leg.br/dadosabertos/senador/1173.json",
+      "section": "detail",
+      "status": "received",
+      "keys": [
+        "DetalheParlamentar"
+      ]
+    },
+    {
+      "id": "camara:proposal:2168236",
+      "url": "https://dadosabertos.camara.leg.br/api/v2/proposicoes/2168236/tramitacoes",
+      "section": "tramitacoes",
+      "status": "received",
+      "keys": [
+        "dados",
+        "links"
+      ]
+    },
+    {
+      "id": "camara:vote:2192984-78",
+      "url": "https://dadosabertos.camara.leg.br/api/v2/votacoes/2192984-78/votos",
+      "section": "votos",
+      "status": "received",
+      "keys": [
+        "dados",
+        "links"
+      ]
+    }
+  ],
+  "backup": "ok"
+}

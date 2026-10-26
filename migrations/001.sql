@@ -1,0 +1,13 @@
+CREATE TABLE IF NOT EXISTS schema_versions(version INTEGER PRIMARY KEY);
+INSERT OR IGNORE INTO schema_versions VALUES(1);
+CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY,source TEXT NOT NULL,kind TEXT NOT NULL,external_id TEXT NOT NULL,url TEXT NOT NULL,raw TEXT NOT NULL,data TEXT NOT NULL,hash TEXT NOT NULL,collected_at TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(source,kind,external_id));
+CREATE INDEX IF NOT EXISTS records_kind ON records(kind,source);
+CREATE TABLE IF NOT EXISTS versions(id INTEGER PRIMARY KEY,record_id TEXT REFERENCES records(id),hash TEXT,raw TEXT,collected_at TEXT);
+CREATE TABLE IF NOT EXISTS runs(id INTEGER PRIMARY KEY,dataset TEXT,started_at TEXT,finished_at TEXT,status TEXT,count INTEGER DEFAULT 0,error TEXT,checkpoint TEXT);
+CREATE TABLE IF NOT EXISTS jobs(id INTEGER PRIMARY KEY,dataset TEXT NOT NULL,status TEXT DEFAULT 'pending',attempts INTEGER DEFAULT 0,available_at REAL DEFAULT 0,lease_until REAL,error TEXT);
+CREATE UNIQUE INDEX IF NOT EXISTS jobs_active ON jobs(dataset) WHERE status IN ('pending','running');
+CREATE TABLE IF NOT EXISTS tenants(id TEXT PRIMARY KEY,name TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL REFERENCES tenants(id),email TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,role TEXT NOT NULL CHECK(role IN ('superadmin','admin','analyst','reader')));
+CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),csrf TEXT NOT NULL,expires_at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS watches(id INTEGER PRIMARY KEY,tenant_id TEXT NOT NULL REFERENCES tenants(id),query TEXT NOT NULL CHECK(length(query) BETWEEN 2 AND 120),created_at TEXT);
+CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY,watch_id INTEGER REFERENCES watches(id) ON DELETE CASCADE,record_id TEXT REFERENCES records(id),hash TEXT,created_at TEXT,UNIQUE(watch_id,record_id,hash));
