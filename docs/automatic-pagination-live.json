@@ -1,0 +1,27 @@
+{
+  "verified_at": "2026-10-26T14:07:58.827513+00:00",
+  "health": {
+    "status": "ok",
+    "database": "ok",
+    "mode": "local_authenticated"
+  },
+  "person_id": "camara:person:104552",
+  "sync": {
+    "state": "idle",
+    "pages": 12,
+    "items": 1170,
+    "completed_at": "2026-10-26T13:53:00.860267+00:00",
+    "last_success": "2026-10-26T13:53:00.860267+00:00",
+    "scope": "Autoria/coautoria disponível na fonte; todos os anos retornados",
+    "error": null,
+    "author_query_complete": true
+  },
+  "observed_proposals": 1170,
+  "worker_online": true,
+  "global_stream_states": {
+    "idle": 559,
+    "pending": 4904,
+    "retry": 2
+  },
+  "note": "12 páginas da consulta de autoria percorridas automaticamente; conclusão não significa histórico nacional completo."
+}

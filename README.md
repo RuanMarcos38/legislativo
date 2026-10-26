@@ -10,14 +10,16 @@ Requer Python 3.11 ou superior. Sem bibliotecas externas.
 python -m app.server
 ```
 
-Abra http://127.0.0.1:8080. Em outro terminal, colete os dados:
+Abra http://127.0.0.1:8080. A atualização automática inicia com o servidor: percorre todas as páginas das consultas suportadas, preserva cursores e revisita as fontes periodicamente. Clique em **Dashboard por político**, pesquise e selecione o parlamentar. Os indicadores se atualizam a cada 30 segundos enquanto a página estiver aberta.
+
+As consultas manuais delimitadas anteriores continuam disponíveis (opcionais):
 
 ```sh
 python -m app.sync --dataset all --max-pages 5
 python -m app.worker
 ```
 
-A interface nasce vazia e informa lacunas; a coleta real depende da disponibilidade das APIs oficiais. A rotina padrão processa somente cinco páginas de cada consulta e registra parcialidade. Senado: senadores em exercício. Câmara: deputados, proposições e votações dos últimos 30 dias; detalhes, autoria, tramitação, histórico e despesas consultáveis sob demanda após autenticação.
+A interface informa lacunas durante a carga inicial. Câmara: lista de deputados, proposições, autoria, tramitação, perfis e votos nominais. Senado: senadores e processos/autorias pelo serviço atual, incluindo decisões estruturadas e detalhes. O comando manual app.sync mantém seu limite explícito de páginas; o motor automático não usa esse limite. Histórico extenso é processado em segundo plano e pode levar dias. Veja [atualização automática e metodologia](docs/ATUALIZACAO_AUTOMATICA.md).
 
 Crie uma organização e seu administrador sem passar senha na linha de comando:
 

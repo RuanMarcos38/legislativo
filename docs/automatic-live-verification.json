@@ -1,0 +1,42 @@
+{
+  "verified_at": "2026-10-26T13:31:15.915992+00:00",
+  "person_id": "senado:person:1173",
+  "period": {
+    "start": "2026-01-01",
+    "end": "",
+    "date_basis": "Data de apresentação informada pela fonte; não o ano de renumeração."
+  },
+  "metrics": {
+    "proposals": 94,
+    "projects": 20,
+    "other_proposals": 74,
+    "first_signatory": 3,
+    "coauthor": 0,
+    "authorship_unspecified": 91,
+    "projects_with_approval_stage": 1,
+    "projects_history_checked": 2,
+    "projects_history_pending": 18,
+    "norms_reported": 1,
+    "laws_publication_verified": null,
+    "implementation_verified": null,
+    "unknown_presentation_dates": 0
+  },
+  "sync": {
+    "state": "idle",
+    "pages": 1,
+    "items": 1019,
+    "completed_at": "2026-10-26T13:31:12.540845+00:00",
+    "last_success": "2026-10-26T13:31:12.540845+00:00",
+    "scope": "Autoria/coautoria disponível na fonte; todos os anos retornados",
+    "error": null,
+    "author_query_complete": true
+  },
+  "integrity": "ok",
+  "preservation": {
+    "tenants": true,
+    "users": true,
+    "watches": true,
+    "sessions": true,
+    "events": true
+  }
+}

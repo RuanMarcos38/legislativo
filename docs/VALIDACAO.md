@@ -30,3 +30,6 @@ Lint por analisador dedicado; testes de carga e penetração; acessibilidade WCA
 O workflow [Validate #1](https://github.com/RuanMarcos38/legislativo/actions/runs/40325031917) concluiu com sucesso no commit `77f3526c62cb12151177ff68d08979e6737bef3e`. Executou testes em Linux, compilação Python, sintaxe JavaScript e build Docker. Esta evidência complementa a execução local; Docker continuou indisponível no computador local. A alteração posterior desta seção é somente documental.
 
 A verificação final também confirmou healthcheck e recuperação HTTP de documento em cache. Foi corrigida a possibilidade de duas instâncias locais compartilharem a mesma porta no Windows; o 21º teste impede regressão desse comportamento.
+
+## Evolução: atualização automática e dashboard individual
+A versão seguinte preserva os dados e adiciona migração 003, motor com cursores persistentes e dashboard por parlamentar. A suíte foi ampliada para 39 testes aprovados. O relatório específico está em [VALIDACAO_ATUALIZACAO.md](VALIDACAO_ATUALIZACAO.md), com metodologia em [ATUALIZACAO_AUTOMATICA.md](ATUALIZACAO_AUTOMATICA.md).

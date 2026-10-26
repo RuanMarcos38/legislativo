@@ -19,7 +19,14 @@ def tick(db):
         attempts=job["attempts"]+1
         db.execute("UPDATE jobs SET status=?,available_at=?,lease_until=NULL,error=? WHERE id=?",("dead" if attempts>=5 else "pending",time.time()+min(3600,2**attempts*30),str(e)[:300],job["id"]))
     db.commit(); return True
-if __name__=="__main__":
+def main():
+    import threading
+    from .automatic import run
+    threading.Thread(target=run,daemon=True).start()
     db=connect()
-    while True:
-        if not tick(db): time.sleep(3)
+    try:
+        while True:
+            if not tick(db): time.sleep(3)
+    finally:db.close()
+
+if __name__=="__main__":main()

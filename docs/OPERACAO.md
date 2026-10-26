@@ -6,6 +6,8 @@ Python 3.11+, sem instalação de pacotes. Nenhum banco ou serviço de outro pro
 Inicie com `python -m app.server`. O servidor ouve apenas 127.0.0.1 por padrão. Crie a conta com `python -m app.auth --tenant "Organização" --email "endereço"`; a senha é solicitada de maneira interativa, nunca por argumento. Mínimo de 12 caracteres. A conta padrão é admin da organização. Use --role superadmin somente para a conta de operação global.
 
 ## Ingestão
+A partir da atualização do dashboard, o servidor inicia o motor automático por padrão. O motor percorre todas as páginas e salva o cursor. As instruções abaixo descrevem o coletor manual legado; seus limites não se aplicam ao novo motor. Consulte [ATUALIZACAO_AUTOMATICA.md](ATUALIZACAO_AUTOMATICA.md).
+
 `python -m app.sync --dataset all --max-pages 5` realiza consultas delimitadas nas fontes oficiais. Há limites de páginas e intervalo entre páginas; não representa importação integral. Para lotes históricos da Câmara: `python -m app.sync --dataset camara_proposals --year 2024 --max-pages 20`. Isso consulta o ano selecionado; não garante todos os documentos, mandatos ou relacionamentos. A lista atual de parlamentares não é um histórico completo.
 
 O worker `python -m app.worker` processa as consultas enfileiradas pelo superadmin. Uma tarefa tem lease de 30 minutos, cinco tentativas e backoff. Com o limite padrão de cinco páginas, o lease excede o tempo previsto das requisições e retries. Tarefa interrompida poderá ser retomada após expirar o lease; upserts são idempotentes. O checkpoint do run é diagnóstico: uma nova tentativa repete a consulta a partir da primeira página, com deduplicação. Tarefas dead exigem revisão da causa e uma nova coleta; não são descartadas silenciosamente.

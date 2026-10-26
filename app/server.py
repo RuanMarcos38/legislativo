@@ -5,9 +5,11 @@ from collections import defaultdict,deque
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from .db import connect,search,serialize,now,ROOT
 from .connectors import detail
+from . import automatic,productivity
+import threading
 SOURCES=[
-("camara","Câmara dos Deputados","https://dadosabertos.camara.leg.br/swagger/api.html","Conector parcial: deputados, proposições e votações. Detalhes sob demanda."),
-("senado","Senado Federal","https://www12.senado.leg.br/dados-abertos","Conector parcial: senadores em exercício e perfil. Matérias e votações ainda não integradas."),
+("camara","Câmara dos Deputados","https://dadosabertos.camara.leg.br/swagger/api.html","Atualização automática: deputados, proposições, autoria, tramitação e votações. Consulte o progresso e a cobertura."),
+("senado","Senado Federal","https://www12.senado.leg.br/dados-abertos","Atualização automática: senadores e processos do serviço atual; autoria e histórico com evidências. Votos do Senado ainda não integrados."),
 ("tse","TSE","https://dadosabertos.tse.jus.br/","Não integrado. Candidatura não equivale a exercício de mandato."),
 ("planalto","Planalto","https://www4.planalto.gov.br/legislacao/","Não integrado. Conversão de propostas em leis não verificada."),
 ("lexml","LexML","https://www.lexml.gov.br/","Não integrado."),
@@ -71,7 +73,10 @@ class Handler(BaseHTTPRequestHandler):
                     user=self.current_user(db)
                     return self.respond({"user":user,"plan":auth.plan(db,user) if user else None})
                 if u.path=="/api/config": return self.respond({"name":os.environ.get("APP_NAME","Observatório Legislativo Brasil"),"mode":"Instalação local • organizações isoladas","billing":"Não ativado","ai":"Busca documental; IA generativa não configurada"})
-                if u.path=="/api/coverage": return self.respond({"sources":coverage(db),"runs":[dict(r) for r in db.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 30")],"jobs":[dict(r) for r in db.execute("SELECT * FROM jobs ORDER BY id DESC LIMIT 30")]})
+                if u.path=="/api/automatic": return self.respond(automatic.status(db))
+                if u.path=="/api/politician":
+                    return self.respond(productivity.dashboard(db,p.get("id",""),p.get("start",""),p.get("end",""),int(p.get("page",1)),int(p.get("size",20)),p.get("category","all")))
+                if u.path=="/api/coverage": return self.respond({"automatic":automatic.status(db),"sources":coverage(db),"runs":[dict(r) for r in db.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 30")],"jobs":[dict(r) for r in db.execute("SELECT * FROM jobs ORDER BY id DESC LIMIT 30")]})
                 if u.path in {"/api/search","/api/export"}:
                     kind=p.get("kind","person")
                     if kind not in {"person","proposal","vote","document"}: raise ValueError("Tipo inválido")
@@ -92,6 +97,7 @@ class Handler(BaseHTTPRequestHandler):
                     user=self.current_user(db)
                     return self.respond({"watches":auth.watches(db,user),"events":auth.events(db,user)})
                 return self.respond({"error":"Rota não encontrada"},404)
+        except KeyError: self.respond({"error":"Parlamentar não encontrado"},404)
         except PermissionError: self.respond({"error":"Entre com sua conta para acessar esta área"},401)
         except (ValueError,TypeError): self.respond({"error":"Parâmetros inválidos"},400)
         except Exception: self.respond({"error":"Falha interna; consulte o estado da coleta"},500)
@@ -128,6 +134,10 @@ class Handler(BaseHTTPRequestHandler):
                     db.execute("DELETE FROM sessions WHERE id=?",(hashlib.sha256(token.encode()).hexdigest(),));db.commit()
                     self.set_cookie="session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
                     return self.respond({"message":"Sessão encerrada"})
+                if path=="/api/automatic/retry":
+                    auth.require(user,"superadmin")
+                    db.execute("UPDATE sync_streams SET state='pending',failures=0,error=NULL,next_due=0 WHERE key=? AND state='dead'",(str(p.get("key","")),));db.commit()
+                    return self.respond({"message":"Coleta reaberta para nova tentativa, preservando o cursor."})
                 if path=="/api/sync":
                     auth.require(user,"superadmin")
                     dataset=p.get("dataset")
@@ -165,5 +175,10 @@ def main():
     port=int(os.environ.get("PORT","8080"))
     server=LocalServer((os.environ.get("BIND_HOST","127.0.0.1"),port),Handler)
     print(f"Observatório local: http://127.0.0.1:{port}",flush=True)
-    server.serve_forever()
+    stop=threading.Event()
+    if os.environ.get("AUTO_SYNC_ENABLED","1")!="0":
+        threading.Thread(target=automatic.run,args=(stop,),daemon=True).start()
+    try:server.serve_forever()
+    finally:
+        stop.set();server.server_close()
 if __name__=="__main__": main()
