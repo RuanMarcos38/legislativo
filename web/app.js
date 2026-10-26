@@ -200,7 +200,7 @@ async function render(){
  window.scrollTo(0,0);
  $("#content").textContent="Carregando…";
  try{
- if(route==="financeiro"||route.startsWith("financeiro/")){await financialPage(route.includes("/")?decodeURIComponent(route.slice(11)):"",token);return;}
+ if(route==="financeiro"||route.startsWith("financeiro/")){if(typeof financialPage!=="function"){setTitle("Fiscalização Financeira","Atualização do serviço necessária");$("#content").innerHTML=empty("Esta instância ainda usa a versão anterior do serviço","Abra a versão atualizada disponibilizada na entrega ou reinicie esta instância para ativar o novo módulo.");return;}await financialPage(route.includes("/")?decodeURIComponent(route.slice(11)):"",token);return;}
  if(route.startsWith("politico/")){await politician(decodeURIComponent(route.slice(9)),token);return;}
  switch(route){case "produtividade":await choosePolitician(token);break;case "inicio":await dashboard(token);break;case "pesquisa":case "parlamentares":await listing("person",token);break;case "projetos":await listing("proposal",token);break;case "votacoes":await listing("vote",token);break;case "historico":await history(token);break;case "monitoramentos":await watches(token);break;case "relatorios":reports();break;case "configuracoes":await settings(token);break;default:setTitle("Página não encontrada","Escolha uma seção no menu.");$("#content").innerHTML=empty("Página não encontrada","Use o menu para continuar.");}}
  catch(err){if(token===generation)showError(err);}
@@ -239,7 +239,7 @@ async function choosePolitician(token){
 async function politician(id,token){
  setTitle("Atividade parlamentar","Carregando indicadores e evidências da fonte oficial.");
  let currentPage=1,params=new URLSearchParams({id,size:"20"});
- $("#content").innerHTML=financeTabs(id,"activity")+'<section class="panel"><form id="activity-filters" class="filters"><label class="field">Apresentados a partir de<input type="date" name="start"></label><label class="field">Apresentados até<input type="date" name="end"></label><label class="field grow">Exibir<select name="category"><option value="all">Todas as proposições</option><option value="projects">Projetos e PECs</option><option value="approved">Projetos com aprovação em etapa</option><option value="norms">Projetos com norma informada</option></select></label><button>Aplicar período</button><button type="button" class="secondary" id="refresh-politician">Atualizar painel</button></form></section><div id="activity-body">Consultando registros…</div>';
+ $("#content").innerHTML=(typeof financeTabs==="function"?financeTabs(id,"activity"):"")+'<section class="panel"><form id="activity-filters" class="filters"><label class="field">Apresentados a partir de<input type="date" name="start"></label><label class="field">Apresentados até<input type="date" name="end"></label><label class="field grow">Exibir<select name="category"><option value="all">Todas as proposições</option><option value="projects">Projetos e PECs</option><option value="approved">Projetos com aprovação em etapa</option><option value="norms">Projetos com norma informada</option></select></label><button>Aplicar período</button><button type="button" class="secondary" id="refresh-politician">Atualizar painel</button></form></section><div id="activity-body">Consultando registros…</div>';
  $("#activity-filters").onsubmit=ev=>{ev.preventDefault();currentPage=1;load().catch(showError);};
  $("#refresh-politician").onclick=()=>load().catch(showError);
  async function load(){
