@@ -12,10 +12,88 @@ async function api(path,body){
 }
 function empty(title,text){return '<div class="empty"><strong>'+e(title)+'</strong><p>'+e(text)+'</p></div>';}
 function sourceCard(s){return '<div class="source"><div><h3><a href="'+e(s.url)+'" target="_blank" rel="noopener noreferrer">'+e(s.name)+' ↗</a></h3><p>'+e(s.note)+'</p><small>Última coleta: '+e(fmt(s.last_collected))+' · '+Object.values(s.counts).reduce((a,b)=>a+b,0)+' registros locais</small></div><span class="pill">'+e(labels[s.status])+'</span></div>';}
+
+// App shell controls are presentation-only; existing routes and APIs remain unchanged.
+const shellMedia=window.matchMedia("(max-width: 760px)");
+let sidebarPreference=null,drawerOpen=false;
+try{const saved=localStorage.getItem("olb.sidebar.mode");if(saved==="compact"||saved==="expanded")sidebarPreference=saved==="compact";}catch{}
+function isSidebarCompact(){
+ return !shellMedia.matches && (sidebarPreference===null?window.innerWidth<=1024:sidebarPreference);
+}
+function applySidebarState(){
+ const mobile=shellMedia.matches,compact=isSidebarCompact();
+ document.body.classList.toggle("sidebar-collapsed",compact);
+ document.body.classList.toggle("drawer-open",mobile&&drawerOpen);
+ const toggle=$("#sidebar-toggle"),side=$("#app-sidebar");
+ toggle.setAttribute("aria-expanded",String(mobile?drawerOpen:!compact));
+ toggle.setAttribute("aria-label",mobile?(drawerOpen?"Fechar menu de navegação":"Abrir menu de navegação"):(compact?"Expandir menu de navegação":"Recolher menu de navegação"));
+ toggle.title=toggle.getAttribute("aria-label");
+ $("#sidebar-backdrop").hidden=!(mobile&&drawerOpen);
+ if(mobile&&drawerOpen){side.setAttribute("role","dialog");side.setAttribute("aria-modal","true");}
+ else{side.removeAttribute("role");side.removeAttribute("aria-modal");}
+ $(".shell").inert=mobile&&drawerOpen;
+ $(".topbar").inert=mobile&&drawerOpen;
+ $("#platform-label").textContent=compact?"Observatório Legislativo":"Transparência parlamentar";
+}
+function closeNavigationDrawer(restoreFocus=true){
+ const wasOpen=drawerOpen;drawerOpen=false;applySidebarState();
+ if(wasOpen&&restoreFocus)$("#sidebar-toggle").focus();
+}
+function updateSessionChrome(session,unavailable=false){
+ const user=session?.user;
+ const roles={superadmin:"Administrador global",admin:"Administrador da organização",analyst:"Analista",reader:"Leitor"};
+ $("#account-name").textContent=unavailable?"Sessão não verificada":user?.email||"Acesso público";
+ $("#account-role").textContent=unavailable?"Verifique em Configurações":user?roles[user.role]||user.role:"Consulta de dados oficiais";
+ $("#account-context").textContent=unavailable?"Não foi possível consultar a sessão. Acesse Configurações para verificar.":user?(user.tenant+" · "+(roles[user.role]||user.role)):"Acesso público. Entre para gerenciar sua organização e seus monitoramentos.";
+ $("#account-settings-link").textContent=user?"Minha conta e configurações":"Entrar na organização";
+ $("#account-menu summary").setAttribute("aria-label","Conta e permissões: "+$("#account-name").textContent);
+}
+function updateSyncChrome(data){
+ if(!data)return;
+ const issues=(data.states?.retry||0)+(data.states?.dead||0);
+ const state=!data.worker_online?"offline":issues?"warning":"online";
+ $("#sync-status-link").dataset.state=state;
+ $("#sync-status-label").textContent=!data.worker_online?"Sem sinal de coleta":issues?"Coleta com ocorrências":"Coleta em execução";
+ $("#sync-status-link").title=(data.last_heartbeat?"Último sinal: "+fmt(new Date(data.last_heartbeat*1000).toISOString()):"Nenhum sinal recente do processo de coleta.")+(issues?" · "+issues+" consultas com falha ou nova tentativa.":"")+" Consulte o histórico e a cobertura.";
+}
+async function refreshSyncChrome(){
+ try{updateSyncChrome(await api("/api/automatic"));}
+ catch{$("#sync-status-link").dataset.state="offline";$("#sync-status-label").textContent="Atualização não verificada";}
+}
+function initializeAppShell(){
+ document.querySelectorAll("#app-sidebar nav a").forEach(a=>{a.title=a.textContent.trim();a.setAttribute("aria-label",a.textContent.trim());});
+ $("#sidebar-toggle").onclick=()=>{
+  if(shellMedia.matches){drawerOpen=!drawerOpen;applySidebarState();if(drawerOpen)$("#app-sidebar nav a").focus();}
+  else{
+   sidebarPreference=!isSidebarCompact();
+   try{localStorage.setItem("olb.sidebar.mode",sidebarPreference?"compact":"expanded");}catch{}
+   applySidebarState();
+  }
+ };
+ $("#drawer-close").onclick=()=>closeNavigationDrawer();
+ $("#sidebar-backdrop").onclick=()=>closeNavigationDrawer();
+ $("#app-sidebar nav").addEventListener("click",event=>{if(event.target.closest("a")&&shellMedia.matches){closeNavigationDrawer(false);$("#main").focus({preventScroll:true});}});
+ shellMedia.addEventListener("change",()=>{drawerOpen=false;applySidebarState();});
+ window.addEventListener("resize",applySidebarState);
+ document.addEventListener("click",event=>{const account=$("#account-menu");if(account.open&&!account.contains(event.target))account.open=false;});
+ document.addEventListener("keydown",event=>{
+  if(drawerOpen&&shellMedia.matches){
+   if(event.key==="Escape"){event.preventDefault();closeNavigationDrawer();return;}
+   if(event.key==="Tab"){
+    const items=Array.from($("#app-sidebar").querySelectorAll("button:not([disabled]),a[href]")).filter(el=>el.getClientRects().length);
+    const first=items[0],last=items[items.length-1];
+    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
+   }
+  }else if(event.key==="Escape"&&$("#account-menu").open){$("#account-menu").open=false;$("#account-menu summary").focus();}
+ });
+ applySidebarState();refreshSyncChrome();setInterval(refreshSyncChrome,60000);
+}
+
 function setTitle(title,subtitle){$("#title").textContent=title;$("#subtitle").textContent=subtitle;document.title=title+" | Observatório Legislativo Brasil";if($("#section-label"))$("#section-label").textContent=title;}
 async function dashboard(token){
  setTitle("Panorama legislativo","Acompanhe a atividade parlamentar a partir de documentos oficiais.");
- const c=await api("/api/coverage");if(token!==generation)return;
+ const c=await api("/api/coverage");if(token!==generation)return;updateSyncChrome(c.automatic);
  const count=k=>c.sources.reduce((sum,s)=>sum+(s.counts[k]||0),0);
  $("#content").innerHTML='<div class="stats">'+[["Parlamentares coletados",count("person"),"Identidades por fonte; sem unificação automática"],["Proposições coletadas",count("proposal"),"Apresentação não significa aprovação"],["Votações coletadas",count("vote"),"Votos nominais somente quando documentados"],["Fontes com registros",c.sources.filter(s=>Object.keys(s.counts).length).length,"De 7 grupos cadastrados; integração parcial"]].map(([l,n,s])=>'<div class="stat"><div class="label">'+e(l)+'</div><div class="value">'+n.toLocaleString("pt-BR")+'</div><small>'+e(s)+'</small></div>').join("")+'</div><div class="big-search"><h2>O que você quer acompanhar?</h2><p>Encontre parlamentares, proposições e registros de votação.</p><a class="button" href="#produtividade">Escolher parlamentar e ver atividade →</a></div><div class="grid"><section class="panel"><div class="panel-head"><h2>Conexões oficiais</h2><a href="#historico">Todas as fontes ↗</a></div>'+c.sources.slice(0,4).map(sourceCard).join("")+'</section><section class="panel"><h2>Da proposta à implementação</h2><p>Quatro etapas, quatro evidências diferentes.</p><div class="timeline"><div><strong>01 · Proposição apresentada</strong><p>Texto protocolado e autoria registrada.</p></div><div><strong>02 · Deliberação legislativa</strong><p>Uma etapa aprovada pode não concluir a tramitação.</p></div><div><strong>03 · Norma publicada</strong><p>Vínculo com a lei exige documentação oficial.</p></div><div><strong>04 · Implementação verificada</strong><p>Publicação, por si só, não comprova execução.</p></div></div></section></div>';
 }
@@ -105,7 +183,7 @@ function reports(){
 async function settings(token){
  setTitle("Configurações","Estado desta instalação e serviços ainda não configurados.");
  const [d,s]=await Promise.all([api("/api/config"),api("/api/session")]);if(token!==generation)return;
- csrf=s.user?.csrf||"";
+ csrf=s.user?.csrf||"";updateSessionChrome(s);
  $("#content").innerHTML='<section class="panel"><h2>Acesso à organização</h2>'+(s.user?'<p>'+e(s.user.email)+' · '+e(s.user.tenant)+' · '+e(s.user.role)+'</p><p>Organização: '+e(s.user.tenant_id)+'<br>Plano: '+e(s.plan?.name)+' · '+e(s.plan?.watch_count)+' / '+e(s.plan?.watch_limit??"sem limite definido")+' monitoramentos. Sem cobrança.</p><button id="logout" class="secondary">Sair</button>':'<p>Crie sua organização pelo comando seguro descrito no manual de operação. Não há credenciais padrão.</p><form id="login" class="filters"><label class="field grow">E-mail<input name="email" type="email" autocomplete="username" required></label><label class="field grow">Senha<input name="password" type="password" minlength="12" maxlength="256" autocomplete="current-password" required></label><button>Entrar</button></form>')+'<p id="auth-status" role="status"></p></section><section class="panel"><h2>'+e(d.name)+'</h2><p>'+e(d.mode)+'</p><div class="source"><strong>Assinaturas e checkout</strong><span>'+e(d.billing)+'</span></div><div class="source"><strong>Assistente IA</strong><span>'+e(d.ai)+'</span></div><div class="source"><strong>Organizações e autenticação</strong><span>Autenticação local, papéis e isolamento no servidor</span></div><div class="source"><strong>Marca</strong><span>Configurável pela variável APP_NAME</span></div><div class="source"><strong>Administração</strong><a href="#historico">Monitorar fontes e fila ↗</a></div></section><section class="panel"><h2>Limites de uso</h2><p>Esta versão opera localmente com sessões e organizações. A publicação como SaaS depende de HTTPS, infraestrutura, banco PostgreSQL com RLS, MFA e testes de produção. Nenhum gateway, domínio ou credencial de outro projeto foi reutilizado.</p></section>';
  if($("#login"))$("#login").onsubmit=async ev=>{ev.preventDefault();try{const r=await api("/api/login",Object.fromEntries(new FormData(ev.target)));csrf=r.csrf;await settings(token);}catch(err){$("#auth-status").textContent=err.message;}};
  if($("#logout"))$("#logout").onclick=async()=>{try{await api("/api/logout",{});csrf="";await settings(token);}catch(err){$("#auth-status").textContent=err.message;}};
@@ -113,9 +191,11 @@ async function settings(token){
 function showError(err){$("#content").innerHTML='<div class="error" role="alert">'+e(err.message)+' <a href="#configuracoes">Entrar na conta →</a></div>';}
 async function render(){
  if(politicianTimer){clearTimeout(politicianTimer);politicianTimer=null;}
+ $("#account-menu").open=false;
+ if(drawerOpen)closeNavigationDrawer(false);
  const token=++generation;route=location.hash.slice(1)||"inicio";if(route==="main")route="inicio";page=1;
  const activeHash=route.startsWith("politico/")?"#produtividade":"#"+route;
- document.querySelectorAll("nav a").forEach(a=>{const active=a.hash===activeHash;a.classList.toggle("active",active);if(active)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current");});
+ document.querySelectorAll("#app-sidebar nav a").forEach(a=>{const active=a.hash===activeHash;a.classList.toggle("active",active);if(active)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current");});
  window.scrollTo(0,0);
  $("#content").textContent="Carregando…";
  try{
@@ -164,7 +244,7 @@ async function politician(id,token){
   if(politicianTimer){clearTimeout(politicianTimer);politicianTimer=null;}
   params=new URLSearchParams(new FormData($("#activity-filters")));params.set("id",id);params.set("size",20);params.set("page",currentPage);
   const [d,auto]=await Promise.all([api("/api/politician?"+params),api("/api/automatic")]);if(token!==generation)return;
-  const p=d.person,m=d.metrics,s=d.sync;
+  const p=d.person,m=d.metrics,s=d.sync;updateSyncChrome(auto);
   setTitle(p.data.name,"Atividade documentada · "+(p.source==="camara"?"Câmara dos Deputados":"Senado Federal")+" · "+(p.data.party||"Partido não informado")+" / "+(p.data.uf||"UF não informada"));
   const fresh=s.author_query_complete?"Consulta de autoria concluída":"Coleta de autoria em andamento / incompleta";
   const rows=d.items.map(r=>'<tr><td><button class="text-button proposal-record" data-id="'+e(r.id)+'">'+e(r.data.name)+'</button><p>'+e(r.data.description||"")+'</p><small>'+e(r.relation==="first_signatory"?"Primeiro signatário":r.relation==="coauthor"?"Coautoria":"Autoria/coautoria: posição ainda não verificada")+'</small></td><td>'+e((r.presented_at||"").slice(0,10)||"Não informada")+'</td><td>'+e(r.proposal_status||"Situação ainda não coletada")+'</td><td>'+(r.evidence.length?r.evidence.map(ev=>'<div class="evidence"><strong>'+e(ev.description)+'</strong><br><small>'+e(ev.event_date||"Data não informada")+'</small><br><a href="'+e(ev.source_url)+'" target="_blank" rel="noopener noreferrer">Ver evidência ↗</a></div>').join(""):e(r.history_checked_at?"Sem aprovação em etapa identificada nesta resposta":"Tramitação ainda não coletada"))+'</td><td><a href="'+e(r.url)+'" target="_blank" rel="noopener noreferrer">Fonte oficial ↗</a><br><small>Coleta: '+e(fmt(r.collected_at))+'</small></td></tr>').join("");
@@ -179,6 +259,7 @@ async function politician(id,token){
 }
 async function automaticPanel(data,token){
  if(!data || token!==generation)return;
+ updateSyncChrome(data);
  const section=document.createElement("section");section.className="panel";
  section.innerHTML='<div class="panel-head"><h2>Atualização automática</h2><span class="tag">'+(data.worker_online?"Processo ativo":"Sem sinal recente")+'</span></div><p>Consulta periódica das fontes integradas, sem limite fixo de páginas. O cursor é preservado após reinícios. '+e(data.note)+'</p><div class="actions">'+Object.entries(data.states).map(([state,n])=>'<span class="tag">'+e(labels[state]||state)+': '+n+'</span>').join("")+'</div><div class="table-wrap"><table><thead><tr><th>Consulta / escopo</th><th>Estado</th><th>Páginas</th><th>Itens</th><th>Última coleta</th><th>Falha</th></tr></thead><tbody>'+data.streams.map(s=>'<tr><td>'+e(s.key)+'<p>'+e(s.scope)+'</p></td><td>'+e(labels[s.state]||s.state)+'</td><td>'+s.pages+'</td><td>'+s.items+'</td><td>'+e(fmt(s.last_success))+'</td><td>'+e(s.error||"—")+'</td></tr>').join("")+'</tbody></table></div><p>O processamento histórico pode levar tempo. Fontes estaduais, municipais e conjuntos ainda não integrados não são apresentados como completos.</p>';
  $("#content").prepend(section);
@@ -186,4 +267,5 @@ async function automaticPanel(data,token){
 
 $("#close-detail").onclick=()=>$("#detail").close();
 window.addEventListener("hashchange",()=>{if(location.hash==="#main"){$("#main").focus();return;}render();});
-api("/api/session").then(s=>{csrf=s.user?.csrf||"";}).finally(render);
+initializeAppShell();
+api("/api/session").then(s=>{csrf=s.user?.csrf||"";updateSessionChrome(s);}).catch(()=>updateSessionChrome(null,true)).finally(render);
