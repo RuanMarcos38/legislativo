@@ -3,7 +3,7 @@
 ## Execução local confirmada
 Python 3.11.9 e Node 24.22.1 no Windows. Aplicação local iniciada em http://127.0.0.1:8080. Nenhuma URL pública foi publicada.
 
-- `python -m unittest discover -s tests -v`: **20 testes passaram**, 17,960 segundos na execução final.
+- `python -m unittest discover -s tests -v`: **21 testes passaram**, 19,947 segundos na execução final.
 - `python -m compileall -q app`: passou.
 - `node --check web/app.js`: passou.
 - `python -m app.verify`: perfis da Câmara e Senado, tramitação e documento de votos recebidos de APIs reais; integridade SQLite e backup restaurado com integrity_check=ok.
@@ -28,3 +28,5 @@ Lint por analisador dedicado; testes de carga e penetração; acessibilidade WCA
 
 ## Verificação posterior no GitHub
 O workflow [Validate #1](https://github.com/RuanMarcos38/legislativo/actions/runs/40325031917) concluiu com sucesso no commit `77f3526c62cb12151177ff68d08979e6737bef3e`. Executou testes em Linux, compilação Python, sintaxe JavaScript e build Docker. Esta evidência complementa a execução local; Docker continuou indisponível no computador local. A alteração posterior desta seção é somente documental.
+
+A verificação final também confirmou healthcheck e recuperação HTTP de documento em cache. Foi corrigida a possibilidade de duas instâncias locais compartilharem a mesma porta no Windows; o 21º teste impede regressão desse comportamento.

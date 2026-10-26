@@ -157,9 +157,13 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError,TypeError,sqlite3.IntegrityError): self.respond({"error":"Entrada inválida"},400)
         except KeyError: self.respond({"error":"Registro não encontrado"},404)
         except Exception: self.respond({"error":"Fonte indisponível ou contrato alterado. Nenhum resultado foi inventado."},502)
+class LocalServer(ThreadingHTTPServer):
+    # Windows otherwise permits two development instances to share one port.
+    allow_reuse_address=False
+
 def main():
     port=int(os.environ.get("PORT","8080"))
-    server=ThreadingHTTPServer((os.environ.get("BIND_HOST","127.0.0.1"),port),Handler)
+    server=LocalServer((os.environ.get("BIND_HOST","127.0.0.1"),port),Handler)
     print(f"Observatório local: http://127.0.0.1:{port}",flush=True)
     server.serve_forever()
 if __name__=="__main__": main()

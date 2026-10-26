@@ -5,7 +5,7 @@ from app.db import connect,upsert,search,now
 from app import auth
 from app.connectors import validate_url,sync,person,detail
 from app.worker import claim,tick
-from app.server import Handler,ThreadingHTTPServer,report_csv
+from app.server import Handler,LocalServer as ThreadingHTTPServer,report_csv
 class Core(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.db=connect(Path(self.tmp.name)/"test.db")
@@ -111,6 +111,8 @@ class HTTP(unittest.TestCase):
             h={"Content-Type":"application/json","Origin":f"http://127.0.0.1:{self.port}","X-Local-Action":"1",**h}
         req=urllib.request.Request(f"http://127.0.0.1:{self.port}"+path,data=json.dumps(body).encode() if body is not None else None,headers=h)
         return urllib.request.urlopen(req,timeout=5)
+    def test_second_server_cannot_bind_the_same_port(self):
+        with self.assertRaises(OSError): ThreadingHTTPServer(("127.0.0.1",self.port),Handler)
     def test_public_health_and_invalid_pagination(self):
         with self.request("/api/health") as r:self.assertEqual(json.load(r)["database"],"ok")
         with self.assertRaises(urllib.error.HTTPError) as cm:self.request("/api/search?page=-1")
