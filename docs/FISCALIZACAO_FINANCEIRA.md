@@ -2,7 +2,7 @@
 
 ## Integração e preservação
 
-Módulo aditivo ao Observatório, na branch `codex/fiscalizacao-financeira`, a partir de `e6fef0ddb8cf6c3fa750895a53199ec59c2968bc`. A migração 004 acrescenta tabelas e índices, sem apagar, renomear ou recriar entidades anteriores. Identidades oficiais reutilizam `records`; dados financeiros públicos são compartilhados, como os demais registros oficiais. Usuários, sessões, organizações, planos, monitoramentos e seus controles de acesso permanecem separados e preservados.
+Módulo aditivo ao Observatório, na branch `codex/fiscalizacao-financeira`, a partir de `e6fef0ddb8cf6c3fa750895a53199ec59c2968bc`. As migrações 004 e 005 acrescentam tabelas e índices, sem apagar, renomear ou recriar entidades anteriores. Identidades oficiais reutilizam `records`; dados financeiros públicos são compartilhados, como os demais registros oficiais. Usuários, sessões, organizações, planos, monitoramentos e seus controles de acesso permanecem separados e preservados.
 
 Antes da alteração foram criados ZIP do código e backup consistente do SQLite, com integrity_check=ok. Backups privados ficam em `work/finance-reference`, fora do repositório e do pacote público. A carga anterior tinha 15.390 registros públicos, zero usuários e zero organizações; novos registros legislativos continuam entrando pelo serviço existente.
 
@@ -73,3 +73,7 @@ Desative a coleta com `FINANCIAL_SYNC_ENABLED=0`, reinicie o processo e reverta 
 ## Saúde do serviço
 
 O endpoint `/api/health` usa uma leitura leve (`database_check=read_probe`) e informa explicitamente `integrity_check=not_run`. Uma verificação completa de integridade de um banco financeiro grande não deve ser executada em cada healthcheck do contêiner. A integridade completa é conferida separadamente na validação e no backup.
+
+## Busca e precedência de fontes
+
+A migração 005 cria dicionários indexados de nomes e fornecedores. A consulta resolve nomes canônicos e aliases publicados antes de acessar os lançamentos, preservando caixa e acentos em português sem executar funções Unicode para cada despesa. Quando há arquivo anual concluído da Câmara, a API individual é apenas uma consulta de conferência; ela não adiciona uma segunda contabilização da mesma competência.

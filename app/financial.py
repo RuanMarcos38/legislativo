@@ -273,7 +273,13 @@ def import_snapshot(db,job,rows,body,url,updated,nxt):
             db.execute('INSERT INTO records SELECT * FROM financial_stage.records WHERE true ON CONFLICT(id) DO NOTHING')
             db.execute('INSERT INTO versions(record_id,hash,raw,collected_at) SELECT s.id,s.hash,s.raw,s.collected_at FROM financial_stage.records s WHERE NOT EXISTS(SELECT 1 FROM versions v WHERE v.record_id=s.id AND v.hash=s.hash)')
             if job['target']:
-                db.execute("DELETE FROM financial_stage.parliamentary_expenses WHERE id IN (SELECT id FROM main.parliamentary_expenses WHERE source_url LIKE 'https://www.camara.leg.br/cotas/%')")
+                annual=db.execute("SELECT 1 FROM financial_source_coverage WHERE source_id=? AND year=? AND target='' AND last_complete IS NOT NULL",(job['source_id'],job['year'])).fetchone()
+                if annual:
+                    db.execute('DELETE FROM financial_stage.parliamentary_expenses')
+                    db.execute("UPDATE financial_import_batches SET state='covered_by_annual_snapshot' WHERE id=?",(batch,))
+                else:db.execute("DELETE FROM financial_stage.parliamentary_expenses WHERE id IN (SELECT id FROM main.parliamentary_expenses WHERE source_url LIKE 'https://www.camara.leg.br/cotas/%')")
+            unique=db.execute('SELECT count(*) FROM financial_stage.parliamentary_expenses').fetchone()[0]
+            confirmed=db.execute("SELECT count(*) FROM financial_stage.parliamentary_expenses WHERE verification='confirmed'").fetchone()[0]
             db.execute('INSERT INTO financial_stage.financial_sync_jobs(key,source_id,year,target) VALUES(?,?,?,?)',(job['key'],job['source_id'],job['year'],job['target']))
             db.execute('INSERT INTO financial_stage.financial_import_batches SELECT * FROM main.financial_import_batches WHERE id=?',(batch,))
             db.execute('UPDATE financial_stage.parliamentary_expenses SET batch_id=?',(batch,))
@@ -299,7 +305,7 @@ def import_snapshot(db,job,rows,body,url,updated,nxt):
 def status(db):
     return dict(sources=[dict(r) for r in db.execute('SELECT * FROM financial_sources')],jobs=[dict(r) for r in db.execute('SELECT key,source_id,year,target,state,attempts,last_success,error,imported,next_due FROM financial_sync_jobs ORDER BY year DESC,key')],coverage=[dict(r) for r in db.execute('SELECT * FROM financial_source_coverage')],note='Somente fontes e competências listadas. Consulta vazia não comprova ausência de despesa. Último dado confirmado é mantido em falhas.')
 
-def where(params):
+def where(params,identities=None,suppliers=None):
     clauses=['1=1'];args=[]
     for param,column in [('person','person_id'),('source','source_id'),('year','year'),('month','month'),('category','category'),('nature','nature'),('verification','verification'),('mandate','mandate'),('component','component')]:
         value=params.get(param,'')
@@ -308,10 +314,14 @@ def where(params):
                 value=int(value)
                 if not (2008<=value<=date.today().year if param=='year' else 1<=value<=12):raise ValueError('Competência inválida')
             clauses.append('f.'+column+'=?');args.append(value)
-    for param,column in [('q','person_name'),('supplier','supplier')]:
-        if params.get(param):
-            if len(params[param])>200:raise ValueError('Busca longa')
-            clauses.append('instr(financial_casefold(f.'+column+'),financial_casefold(?))>0');args.append(params[param])
+    if params.get('q'):
+        ids,names=identities or ([],[]);parts=[]
+        if ids:parts.append('f.person_id IN ('+','.join('?' for _ in ids)+')');args.extend(ids)
+        if names:parts.append('(f.person_id IS NULL AND f.person_name IN ('+','.join('?' for _ in names)+'))');args.extend(names)
+        clauses.append('('+' OR '.join(parts)+')' if parts else '0=1')
+    if params.get('supplier'):
+        names=suppliers or []
+        clauses.append('f.supplier IN ('+','.join('?' for _ in names)+')' if names else '0=1');args.extend(names)
     if params.get('uf'):
         clauses.append("json_extract(p.data,'$.uf')=?");args.append(params['uf'].upper())
     return ' AND '.join(clauses),args
@@ -324,8 +334,24 @@ def public_row(row):
     return r
 
 def query(db,params,export=False):
-    db.create_function('financial_casefold',1,lambda value:str(value or '').casefold(),deterministic=True)
-    condition,args=where(params);page=int(params.get('page',1));size=int(params.get('size',20))
+    identities=(set(),set());suppliers=[]
+    for param in ('q','supplier'):
+        if len(params.get(param,''))>200:raise ValueError('Busca longa')
+    if params.get('q'):
+        term=params['q'].casefold()
+        # Covering index yields only distinct public aliases, not every expense.
+        for person,name in db.execute('SELECT DISTINCT person_id,person_name FROM parliamentary_expenses'):
+            if term in name.casefold():
+                if person:identities[0].add(person)
+                else:identities[1].add(name)
+        for row in db.execute("SELECT id,json_extract(data,'$.name') name FROM records WHERE kind='person'"):
+            if term in (row['name'] or '').casefold():identities[0].add(row['id'])
+    if params.get('supplier'):
+        term=params['supplier'].casefold()
+        suppliers=[row[0] for row in db.execute('SELECT DISTINCT supplier FROM parliamentary_expenses WHERE supplier IS NOT NULL') if term in row[0].casefold()]
+    if sum(map(len,identities))+len(suppliers)>min(20000,db.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER)-32):raise ValueError('Refine o nome ou fornecedor')
+    identities=tuple(sorted(group) for group in identities)
+    condition,args=where(params,identities,suppliers);page=int(params.get('page',1));size=int(params.get('size',20))
     if not 1<=page<=100000 or not 1<=size<=100:raise ValueError('Paginação inválida')
     base=' FROM parliamentary_expenses f LEFT JOIN records p ON p.id=f.person_id WHERE '+condition
     total=db.execute('SELECT count(*)'+base,args).fetchone()[0]

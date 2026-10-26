@@ -20,7 +20,7 @@ class Automatic(unittest.TestCase):
         self.db.commit();self.db.close();self.db=connect(self.path)
         self.assertEqual(self.db.execute("SELECT count(*) FROM watches").fetchone()[0],1)
         self.assertEqual(self.db.execute("SELECT count(*) FROM records").fetchone()[0],1)
-        self.assertEqual(self.db.execute("SELECT MAX(version) FROM schema_versions").fetchone()[0],4)
+        self.assertEqual(self.db.execute("SELECT MAX(version) FROM schema_versions").fetchone()[0],5)
     @patch("app.automatic.fetch")
     def test_all_pages_resume_across_restart_without_page_cap(self,fetch):
         u="https://dadosabertos.camara.leg.br/api/v2/proposicoes?pagina=1"

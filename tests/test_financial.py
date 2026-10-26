@@ -1,5 +1,6 @@
 import csv,io,json,tempfile,time,unittest,zipfile
 from decimal import Decimal
+from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 from app.db import connect,upsert
@@ -9,7 +10,7 @@ from app.financial_exports import xlsx_export,pdf_export
 class Financial(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.db=connect(Path(self.tmp.name)/'test.db')
-        with patch.dict('os.environ',{'FINANCIAL_START_YEAR':'2026'}):f.seed(self.db)
+        with patch.dict('os.environ',{'FINANCIAL_START_YEAR':'2026'}):f.seed(self.db,today=date(2026,10,26))
         self.row=dict(id=2283505,tipoDocumento='Nota Fiscal',ano=2026,mes=3,codSenador=6338,nomeSenador='TERESA LEITÃO',tipoDespesa='Aluguel de imóveis para escritório político',cpfCnpj='10.835.932/0001-08',fornecedor='COMPANHIA ENERGETICA DE PERNAMBUCO',documento='401210844',data='2026-03-09',detalhamento=None,valorReembolsado=Decimal('440.5'))
         self.url=f.SENADO+'2026'
     def tearDown(self):self.db.close();self.tmp.cleanup()
@@ -144,5 +145,18 @@ class Financial(unittest.TestCase):
         f.step(self.db,fetcher=lambda u:(self.body({'dados':[],'links':[{'rel':'next','href':url}]}),None))
         self.assertEqual(self.db.execute('select state from financial_sync_jobs where key=?',(key,)).fetchone()[0],'retry')
         self.assertEqual(self.db.execute('select count(*) from financial_import_batches').fetchone()[0],0)
+    def test_annual_snapshot_prevents_parallel_api_accounting(self):
+        self.db.execute("UPDATE financial_sync_jobs SET next_due=? WHERE source_id<>'camara_ceap'",(time.time()+10000,));self.db.commit()
+        row=dict(ideCadastro='62881',txNomeParlamentar='Teste',ideDocumento='7',numLote='10',numParcela='0',numAno='2026',numMes='1',vlrDocumento='99.90',vlrGlosa='0',vlrLiquido='99.90',txtDescricao='TELEFONIA')
+        csvbuf=io.StringIO();writer=csv.DictWriter(csvbuf,fieldnames=list(row),delimiter=';');writer.writeheader();writer.writerow(row)
+        buf=io.BytesIO()
+        with zipfile.ZipFile(buf,'w') as z:z.writestr('Ano-2026.csv',csvbuf.getvalue())
+        f.step(self.db,fetcher=lambda u:(buf.getvalue(),None))
+        f.enqueue(self.db,'camara_api',2026,'camara:person:62881');self.db.commit()
+        api=dict(codDocumento=7,codLote=10,parcela=0,numRessarcimento='0',ano=2026,mes=1,valorDocumento='99.90',valorGlosa='0',valorLiquido='99.90',tipoDespesa='TELEFONIA')
+        f.step(self.db,fetcher=lambda u:(self.body({'dados':[api],'links':[]}),None))
+        result=f.query(self.db,{})
+        self.assertEqual(result['total'],1);self.assertEqual(result['totals'][0]['amount'],'99.90')
+        self.assertEqual(self.db.execute('select state from financial_import_batches order by id desc limit 1').fetchone()[0],'covered_by_annual_snapshot')
 
 if __name__=='__main__':unittest.main()
