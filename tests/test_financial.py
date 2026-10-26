@@ -53,6 +53,10 @@ class Financial(unittest.TestCase):
         self.assertEqual(f.query(self.db,{'q':"' OR 1=1 --"})['total'],0)
         for params in [{'month':'13'},{'year':'1999'},{'page':'0'},{'size':'1000'}]:
             with self.assertRaises(ValueError):f.query(self.db,params)
+    def test_portuguese_accent_case_in_name_filter(self):
+        self.put()
+        self.assertEqual(f.query(self.db,{'q':'Teresa Leitão'})['total'],1)
+        self.assertEqual(f.query(self.db,{'q':'teresa leitão'})['total'],1)
     def test_source_and_receipt_allowlist(self):
         for u in ['http://www.camara.leg.br/cotas/a','https://localhost/a','https://www.camara.leg.br.evil.test/cotas/a','https://user:pass@www.camara.leg.br/cotas/a','https://www.camara.leg.br:444/cotas/a','https://www.camara.leg.br/unrelated']:
             with self.assertRaises(ValueError):f.validate_url(u)

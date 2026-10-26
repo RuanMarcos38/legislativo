@@ -311,7 +311,7 @@ def where(params):
     for param,column in [('q','person_name'),('supplier','supplier')]:
         if params.get(param):
             if len(params[param])>200:raise ValueError('Busca longa')
-            clauses.append('instr(lower(f.'+column+'),lower(?))>0');args.append(params[param])
+            clauses.append('instr(financial_casefold(f.'+column+'),financial_casefold(?))>0');args.append(params[param])
     if params.get('uf'):
         clauses.append("json_extract(p.data,'$.uf')=?");args.append(params['uf'].upper())
     return ' AND '.join(clauses),args
@@ -324,6 +324,7 @@ def public_row(row):
     return r
 
 def query(db,params,export=False):
+    db.create_function('financial_casefold',1,lambda value:str(value or '').casefold(),deterministic=True)
     condition,args=where(params);page=int(params.get('page',1));size=int(params.get('size',20))
     if not 1<=page<=100000 or not 1<=size<=100:raise ValueError('Paginação inválida')
     base=' FROM parliamentary_expenses f LEFT JOIN records p ON p.id=f.person_id WHERE '+condition
