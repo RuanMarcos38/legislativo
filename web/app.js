@@ -12,7 +12,7 @@ async function api(path,body){
 }
 function empty(title,text){return '<div class="empty"><strong>'+e(title)+'</strong><p>'+e(text)+'</p></div>';}
 function sourceCard(s){return '<div class="source"><div><h3><a href="'+e(s.url)+'" target="_blank" rel="noopener noreferrer">'+e(s.name)+' ↗</a></h3><p>'+e(s.note)+'</p><small>Última coleta: '+e(fmt(s.last_collected))+' · '+Object.values(s.counts).reduce((a,b)=>a+b,0)+' registros locais</small></div><span class="pill">'+e(labels[s.status])+'</span></div>';}
-function setTitle(title,subtitle){$("#title").textContent=title;$("#subtitle").textContent=subtitle;}
+function setTitle(title,subtitle){$("#title").textContent=title;$("#subtitle").textContent=subtitle;document.title=title+" | Observatório Legislativo Brasil";if($("#section-label"))$("#section-label").textContent=title;}
 async function dashboard(token){
  setTitle("Panorama legislativo","Acompanhe a atividade parlamentar a partir de documentos oficiais.");
  const c=await api("/api/coverage");if(token!==generation)return;
@@ -114,7 +114,9 @@ function showError(err){$("#content").innerHTML='<div class="error" role="alert"
 async function render(){
  if(politicianTimer){clearTimeout(politicianTimer);politicianTimer=null;}
  const token=++generation;route=location.hash.slice(1)||"inicio";if(route==="main")route="inicio";page=1;
- document.querySelectorAll("nav a").forEach(a=>a.classList.toggle("active",a.hash==="#"+route));
+ const activeHash=route.startsWith("politico/")?"#produtividade":"#"+route;
+ document.querySelectorAll("nav a").forEach(a=>{const active=a.hash===activeHash;a.classList.toggle("active",active);if(active)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current");});
+ window.scrollTo(0,0);
  $("#content").textContent="Carregando…";
  try{
  if(route.startsWith("politico/")){await politician(decodeURIComponent(route.slice(9)),token);return;}
@@ -129,15 +131,26 @@ function metric(label,value,note){
  return '<div class="stat"><div class="label">'+e(label)+'</div><div class="value">'+(value===null?'Não apurado':Number(value).toLocaleString("pt-BR"))+'</div><small>'+e(note)+'</small></div>';
 }
 async function choosePolitician(token){
- setTitle("Dashboard por político","Escolha um parlamentar para consultar autoria, projetos, aprovações e fontes.");
- $("#content").innerHTML='<section class="panel"><h2>Quem você quer acompanhar?</h2>'+filters("person")+'</section><section class="panel"><div id="people-options">Carregando parlamentares…</div></section>';
- $("#filters").onsubmit=ev=>{ev.preventDefault();load().catch(showError);};
+ setTitle("Dashboard por político","Consulte a atividade parlamentar a partir de registros e documentos oficiais.");
+ let peoplePage=1,requestVersion=0;
+ $("#content").innerHTML='<section class="panel filter-panel"><div class="section-heading"><h2>Encontrar parlamentar</h2><span>Busque por nome ou refine os filtros</span></div>'+filters("person")+'</section><section class="panel directory-panel"><div id="people-options" aria-live="polite"><div class="loading-state">Carregando a lista de parlamentares…</div></div></section>';
+ $("#filters").onsubmit=ev=>{ev.preventDefault();peoplePage=1;load().catch(showError);};
  async function load(){
-  const p=new URLSearchParams(new FormData($("#filters")));p.set("kind","person");p.set("size",100);
+  const request=++requestVersion;
+  const p=new URLSearchParams(new FormData($("#filters")));p.set("kind","person");p.set("size",20);p.set("page",peoplePage);
   p.set("uf",(p.get("uf")||"").toUpperCase());
-  const d=await api("/api/search?"+p);if(token!==generation)return;
-  $("#people-options").innerHTML=d.items.length?'<label class="field">Escolha o parlamentar<select id="politician-select"><option value="">Selecione para abrir o dashboard</option>'+d.items.map(r=>'<option value="'+e(r.id)+'">'+e(r.data.name)+' · '+e(r.source==="camara"?"Câmara":"Senado")+' · '+e(r.data.uf||"UF não informada")+'</option>').join("")+'</select></label><p>'+d.total.toLocaleString("pt-BR")+' identidades encontradas. Exibindo até 100; refine a busca para localizar outras. Identidades de Casas distintas não são fundidas automaticamente.</p><div class="person-grid">'+d.items.slice(0,12).map(r=>'<a class="person-card" href="#politico/'+encodeURIComponent(r.id)+'"><span class="avatar">'+e(r.data.name.slice(0,1))+'</span><strong>'+e(r.data.name)+'</strong><small>'+e(r.data.role||"")+' · '+e(r.data.party||"Partido não informado")+' / '+e(r.data.uf||"—")+'</small><span>Ver dashboard →</span></a>').join("")+'</div>':empty("Nenhum parlamentar encontrado","Altere os filtros. A ausência na base não indica ausência de atuação.");
-  if($("#politician-select"))$("#politician-select").onchange=()=>{if($("#politician-select").value)location.hash="politico/"+encodeURIComponent($("#politician-select").value);};
+  $("#people-options").setAttribute("aria-busy","true");
+  const d=await api("/api/search?"+p);if(token!==generation||request!==requestVersion)return;
+  const from=d.total?(peoplePage-1)*20+1:0,to=Math.min(peoplePage*20,d.total);
+  const rows=d.items.map(r=>{
+   const url="#politico/"+encodeURIComponent(r.id),role=String(r.data.role||"");
+   const origin=role.toLowerCase().includes("não verificado")?"Autoria · mandato não verificado":"Cadastro da Casa";
+   return '<tr><td class="person-name"><a href="'+url+'">'+e(r.data.name)+'</a><small>'+e(role.toLowerCase().includes("não verificado")?"Identificado em autoria":role||"Identidade institucional")+'</small></td><td><span class="house-label">'+e(r.source==="camara"?"Câmara dos Deputados":"Senado Federal")+'</span></td><td class="party-cell">'+e(r.data.party||"Não informado")+'</td><td class="uf-cell">'+e(r.data.uf||"—")+'</td><td><span class="registry-label">'+e(origin)+'</span></td><td class="row-action"><a href="'+url+'" aria-label="Abrir dashboard de '+e(r.data.name)+'">Ver dashboard <span aria-hidden="true">↗</span></a></td></tr>';
+  }).join("");
+  $("#people-options").innerHTML='<div class="directory-toolbar"><div><h2>Parlamentares</h2><p>Selecione um nome para abrir o dashboard individual.</p></div><span class="result-count">'+d.total.toLocaleString("pt-BR")+' registros</span></div>'+(rows?'<div class="table-wrap directory-scroll"><table class="people-table"><caption class="sr-only">Parlamentares encontrados e acesso ao dashboard individual</caption><thead><tr><th scope="col">Parlamentar</th><th scope="col">Casa legislativa</th><th scope="col">Partido</th><th scope="col">UF</th><th scope="col">Origem do registro</th><th scope="col" class="row-action">Acesso</th></tr></thead><tbody>'+rows+'</tbody></table></div>':empty("Nenhum parlamentar encontrado","Altere os filtros. A ausência na base não indica ausência de atuação."))+'<div class="directory-footer"><span>'+from.toLocaleString("pt-BR")+'–'+to.toLocaleString("pt-BR")+' de '+d.total.toLocaleString("pt-BR")+' registros · Página '+peoplePage+' de '+Math.max(1,Math.ceil(d.total/20))+'</span><div class="pagination-actions"><button class="secondary" id="people-prev" '+(peoplePage===1?"disabled":"")+'>← Anterior</button><button class="secondary" id="people-next" '+(to>=d.total?"disabled":"")+'>Próxima →</button></div></div><p class="directory-note">Identidades de Casas diferentes permanecem separadas. O cadastro na autoria de uma proposição não comprova o exercício atual de mandato.</p>';
+  $("#people-options").removeAttribute("aria-busy");
+  $("#people-prev").onclick=()=>{peoplePage--;load().catch(showError);};
+  $("#people-next").onclick=()=>{peoplePage++;load().catch(showError);};
  }
  await load();
 }
