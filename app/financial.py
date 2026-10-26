@@ -275,9 +275,13 @@ def import_snapshot(db,job,rows,body,url,updated,nxt):
             if job['target']:
                 annual=db.execute("SELECT 1 FROM financial_source_coverage WHERE source_id=? AND year=? AND target='' AND last_complete IS NOT NULL",(job['source_id'],job['year'])).fetchone()
                 if annual:
+                    # These are uncommitted scratch rows, not the live audit trail.
+                    db.execute('DELETE FROM financial_stage.financial_audit_logs')
                     db.execute('DELETE FROM financial_stage.parliamentary_expenses')
                     db.execute("UPDATE financial_import_batches SET state='covered_by_annual_snapshot' WHERE id=?",(batch,))
-                else:db.execute("DELETE FROM financial_stage.parliamentary_expenses WHERE id IN (SELECT id FROM main.parliamentary_expenses WHERE source_url LIKE 'https://www.camara.leg.br/cotas/%')")
+                else:
+                    db.execute("DELETE FROM financial_stage.financial_audit_logs WHERE expense_id IN (SELECT id FROM main.parliamentary_expenses WHERE source_url LIKE 'https://www.camara.leg.br/cotas/%')")
+                    db.execute("DELETE FROM financial_stage.parliamentary_expenses WHERE id IN (SELECT id FROM main.parliamentary_expenses WHERE source_url LIKE 'https://www.camara.leg.br/cotas/%')")
             unique=db.execute('SELECT count(*) FROM financial_stage.parliamentary_expenses').fetchone()[0]
             confirmed=db.execute("SELECT count(*) FROM financial_stage.parliamentary_expenses WHERE verification='confirmed'").fetchone()[0]
             db.execute('INSERT INTO financial_stage.financial_sync_jobs(key,source_id,year,target) VALUES(?,?,?,?)',(job['key'],job['source_id'],job['year'],job['target']))
