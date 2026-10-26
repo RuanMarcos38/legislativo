@@ -60,6 +60,11 @@ class Core(unittest.TestCase):
     def test_source_allowlist(self):
         for url in ["http://dadosabertos.camara.leg.br/","https://localhost/","https://dadosabertos.camara.leg.br.evil.test/","https://dadosabertos.camara.leg.br:444/","https://user:pass@dadosabertos.camara.leg.br/"]:
             with self.assertRaises(ValueError): validate_url(url)
+    def test_new_financial_identity_is_not_routed_to_another_house(self):
+        key=self.put('15739','Identidade estadual',source='alesc')
+        with patch('app.connectors.fetch') as fetcher:
+            with self.assertRaises(ValueError):detail(self.db,key,'detail')
+            fetcher.assert_not_called()
     def test_real_contract_shapes_using_test_only_fixture(self):
         eid,data=person("senado",{"IdentificacaoParlamentar":{"CodigoParlamentar":"123","NomeParlamentar":"Teste","UfParlamentar":"DF"}})
         self.assertEqual(eid,"123");self.assertEqual(data["uf"],"DF")
