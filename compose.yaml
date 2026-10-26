@@ -1,0 +1,18 @@
+services:
+  web:
+    build: .
+    environment:
+      AUTO_SYNC_ENABLED: "0"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - storage:/app/data
+    restart: unless-stopped
+  worker:
+    build: .
+    command: ["python", "-m", "app.worker"]
+    volumes:
+      - storage:/app/data
+    restart: unless-stopped
+volumes:
+  storage:
