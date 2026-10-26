@@ -338,6 +338,12 @@ def public_row(row):
     return r
 
 def query(db,params,export=False):
+    # One read snapshot keeps rows, counters and monetary aggregates consistent.
+    db.execute('SAVEPOINT financial_read')
+    try:return _query(db,params,export)
+    finally:db.execute('RELEASE SAVEPOINT financial_read')
+
+def _query(db,params,export=False):
     identities=(set(),set());suppliers=[]
     for param in ('q','supplier'):
         if len(params.get(param,''))>200:raise ValueError('Busca longa')
@@ -357,7 +363,8 @@ def query(db,params,export=False):
     identities=tuple(sorted(group) for group in identities)
     condition,args=where(params,identities,suppliers);page=int(params.get('page',1));size=int(params.get('size',20))
     if not 1<=page<=100000 or not 1<=size<=100:raise ValueError('Paginação inválida')
-    base=' FROM parliamentary_expenses f LEFT JOIN records p ON p.id=f.person_id WHERE '+condition
+    join=' LEFT JOIN records p ON p.id=f.person_id' if params.get('uf') else ''
+    base=' FROM parliamentary_expenses f'+join+' WHERE '+condition
     total=db.execute('SELECT count(*)'+base,args).fetchone()[0]
     if export and total>10000:raise ValueError('Refine os filtros para exportar até 10000 registros')
     limit,offset=(10000,0) if export else (size,(page-1)*size)
@@ -372,10 +379,14 @@ def query(db,params,export=False):
     if params.get('person'):
         p=db.execute("SELECT id,data,url FROM records WHERE id=? AND kind='person'",(params['person'],)).fetchone()
         if p:person=dict(id=p['id'],data=json.loads(p['data']),url=p['url'])
+    category_params=dict(params);category_params.pop('category',None)
+    category_where,category_args=where(category_params,identities,suppliers)
+    categories={r[0] for r in db.execute('SELECT DISTINCT f.category FROM parliamentary_expenses f'+join+' WHERE '+category_where+' ORDER BY f.category',category_args)}
+    if params.get('category'):categories.add(params['category'])
     return dict(total=total,page=page,size=limit,items=[public_row(r) for r in rows],person=person,
       totals=[dict(component=r['component'],nature=r['nature'],amount=money(r['amount']),records=r['n']) for r in grouped],
       timeline=[dict(year=r['year'],month=r['month'],component=r['component'],nature=r['nature'],amount=money(r['amount'])) for r in history],
-      pending=pending,filters=params,categories=[r[0] for r in db.execute('SELECT DISTINCT category FROM parliamentary_expenses ORDER BY category')],
+      pending=pending,filters=params,categories=sorted(categories),
       methodology='Totais apenas de registros confirmados, separados por componente e natureza. Ajustes negativos permanecem separados. Não há custo total, soma de bruto e líquido ou soma de fases. Mandato desconhecido permanece desconhecido. Emendas ficam separadas.',
       amendments=dict(status='credentials_required',items=[],note='Não apurado. API CGU exige chave e conciliação de identificadores; nome isolado não vincula emenda ao parlamentar.'),coverage=status(db))
 

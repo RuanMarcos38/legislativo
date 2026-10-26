@@ -1,4 +1,4 @@
-import csv,io,json,tempfile,time,unittest,zipfile
+import csv,io,json,tempfile,time,unittest,zipfile,sqlite3
 from decimal import Decimal
 from datetime import date
 from pathlib import Path
@@ -124,6 +124,21 @@ class Financial(unittest.TestCase):
         with connect(Path(self.tmp.name)/'test.db') as reader:
             self.assertNotEqual(f.query(reader,{})['items'][0]['supplier'],'Correção ainda não confirmada')
         self.db.rollback()
+    def test_rows_and_totals_share_one_snapshot(self):
+        self.put();writer=self.db
+        class InterleavedReader(sqlite3.Connection):
+            fired=False
+            def execute(inner,sql,args=()):
+                result=super(InterleavedReader,inner).execute(sql,args)
+                if sql.startswith('SELECT count(*) FROM parliamentary_expenses f') and not inner.fired:
+                    inner.fired=True
+                    writer.execute('UPDATE parliamentary_expenses SET amount_cents=99999');writer.commit()
+                return result
+        reader=sqlite3.connect(Path(self.tmp.name)/'test.db',factory=InterleavedReader);reader.row_factory=sqlite3.Row
+        try:
+            d=f.query(reader,{})
+            self.assertEqual(d['items'][0]['amount'],'440.50');self.assertEqual(d['totals'][0]['amount'],'440.50')
+        finally:reader.close()
     def test_camara_api_pagination_and_bulk_share_key(self):
         upsert(self.db,'camara','person','62881',f.CAMARA+'deputados/62881',{'id':62881},{'name':'Danilo Forte','search':'danilo forte'})
         self.db.execute('UPDATE financial_sync_jobs SET next_due=?',(time.time()+10000,))
