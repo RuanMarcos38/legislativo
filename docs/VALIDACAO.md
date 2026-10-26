@@ -25,3 +25,6 @@ Os dados sintéticos dos testes ficam somente em diretórios temporários. Nunca
 
 ## Não verificado ou pendente
 Lint por analisador dedicado; testes de carga e penetração; acessibilidade WCAG completa; viewport móvel; todos os percursos privados em navegador; PostgreSQL/RLS; MFA; gateway; SMTP; IA generativa; TSE/leis/SAPL/estados/municípios; cobertura nacional completa; build Docker e CI remoto. Responsividade tem regras CSS, sem alegação de validação móvel concluída.
+
+## Verificação posterior no GitHub
+O workflow [Validate #1](https://github.com/RuanMarcos38/legislativo/actions/runs/40325031917) concluiu com sucesso no commit `77f3526c62cb12151177ff68d08979e6737bef3e`. Executou testes em Linux, compilação Python, sintaxe JavaScript e build Docker. Esta evidência complementa a execução local; Docker continuou indisponível no computador local. A alteração posterior desta seção é somente documental.
