@@ -498,3 +498,38 @@ nav{gap:2px}
 .app-shell input::placeholder{color:#667085}
 .app-shell .delete-watch{color:var(--danger);border-color:#efc3be;background:#fff}
 .app-shell .delete-watch:hover{background:#fff4f2}
+
+/* Financial module shares the existing shell and component tokens. */
+.app-shell .finance-tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin:0 0 18px;flex-wrap:wrap}
+.app-shell .finance-tabs a{padding:10px 16px;color:var(--muted);font-weight:600;border-bottom:3px solid transparent}
+.app-shell .finance-tabs a[aria-current="page"]{color:var(--green);border-color:var(--green)}
+.app-shell .finance-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:end}
+.app-shell .finance-filters .field,.app-shell .finance-filters input,.app-shell .finance-filters select{min-width:0;width:100%}
+.app-shell .finance-export{margin:14px 0;flex-wrap:wrap}
+.app-shell .finance-export span{font-size:11px;color:var(--muted)}
+.app-shell .finance-stats{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.app-shell .finance-value{font-size:23px;overflow-wrap:anywhere}
+.app-shell .finance-unavailable{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:16px 0 0}
+.app-shell .finance-unavailable dt{font-size:12px;font-weight:600}
+.app-shell .finance-unavailable dd{margin:4px 0;font-size:12px;color:var(--muted)}
+.app-shell .finance-table table{min-width:1240px;table-layout:fixed}
+.app-shell .finance-table th:nth-child(1){width:115px}
+.app-shell .finance-table th:nth-child(2){width:160px}
+.app-shell .finance-table th:nth-child(3){width:210px}
+.app-shell .finance-table th:nth-child(4){width:150px}
+.app-shell .finance-table th:nth-child(5){width:150px}
+.app-shell .finance-table th:nth-child(6){width:200px}
+.app-shell .finance-table th:nth-child(7){width:255px}
+.app-shell .finance-table td{vertical-align:top;overflow-wrap:anywhere;white-space:normal}
+.app-shell .finance-table small{display:block;margin-top:5px;font-size:11px}
+.app-shell .money-cell{font-variant-numeric:tabular-nums;text-align:right}
+.app-shell .finance-table .money-cell strong{white-space:normal}
+.app-shell .finance-table summary{font-size:11px;margin-top:8px;color:var(--green)}
+.app-shell .finance-table details p{font-size:11px}
+.app-shell .finance-pending{background:#fff8e5;color:#805d12;border-color:#ead7a3}
+.app-shell #financial-body meter{width:100%;min-width:80px;accent-color:var(--green)}
+.app-shell #financial-body details p{overflow-wrap:anywhere}
+.app-shell #financial-body .notice{margin-bottom:16px}
+@media(max-width:1024px){.app-shell .finance-filters{grid-template-columns:repeat(3,minmax(0,1fr))}.app-shell .finance-unavailable{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){.app-shell .finance-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.app-shell .finance-export{gap:8px}.app-shell .finance-export .button{flex:1 1 40%}.app-shell .finance-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.app-shell .finance-value{font-size:19px}}
+@media(max-width:375px){.app-shell .finance-filters,.app-shell .finance-unavailable,.app-shell .finance-stats{grid-template-columns:minmax(0,1fr)}}

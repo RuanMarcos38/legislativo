@@ -5,7 +5,7 @@ from collections import defaultdict,deque
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from .db import connect,search,serialize,now,ROOT
 from .connectors import detail
-from . import automatic,productivity
+from . import automatic,productivity,financial
 import threading
 SOURCES=[
 ("camara","Câmara dos Deputados","https://dadosabertos.camara.leg.br/swagger/api.html","Atualização automática: deputados, proposições, autoria, tramitação e votações. Consulte o progresso e a cobertura."),
@@ -13,7 +13,7 @@ SOURCES=[
 ("tse","TSE","https://dadosabertos.tse.jus.br/","Não integrado. Candidatura não equivale a exercício de mandato."),
 ("planalto","Planalto","https://www4.planalto.gov.br/legislacao/","Não integrado. Conversão de propostas em leis não verificada."),
 ("lexml","LexML","https://www.lexml.gov.br/","Não integrado."),
-("estados","Assembleias / CLDF","https://www.interlegis.leg.br/","Nenhuma Casa estadual conectada."),
+("estados","Assembleias / CLDF","https://www.interlegis.leg.br/","Dados legislativos estaduais não integrados. A cobertura financeira da ALESC é apresentada separadamente em Fiscalização Financeira."),
 ("municipios","Câmaras municipais / SAPL","https://www.interlegis.leg.br/","Nenhum município conectado; cadastro geográfico nacional pendente.")]
 DATASETS={"camara_people","senado_people","camara_proposals","camara_votes"}
 def coverage(db):
@@ -52,6 +52,11 @@ class Handler(BaseHTTPRequestHandler):
     def respond(self,value,status=200,ctype="application/json; charset=utf-8"):
         body=(json.dumps(value,ensure_ascii=False) if ctype.startswith("application/json") else value).encode("utf8")
         self.send_response(status); self.headers_common(ctype); self.send_header("Content-Length",str(len(body))); self.end_headers(); self.wfile.write(body)
+    def download(self,body,ctype,filename):
+        if isinstance(body,str):body=body.encode('utf8')
+        self.send_response(200);self.headers_common(ctype)
+        self.send_header('Content-Disposition','attachment; filename="'+filename+'"')
+        self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
     def guard(self):
         host=self.headers.get("Host","")
         if host not in {f"127.0.0.1:{self.server.server_port}",f"localhost:{self.server.server_port}"}:
@@ -64,9 +69,9 @@ class Handler(BaseHTTPRequestHandler):
         if not self.guard(): return
         try:
             u=urllib.parse.urlsplit(self.path); p={k:v[0] for k,v in urllib.parse.parse_qs(u.query).items()}
-            if u.path in {"/","/app.js","/style.css"}:
-                name={"/":"index.html","/app.js":"app.js","/style.css":"style.css"}[u.path]
-                return self.respond((ROOT/"web"/name).read_text(encoding="utf8"),ctype={"index.html":"text/html; charset=utf-8","app.js":"text/javascript; charset=utf-8","style.css":"text/css; charset=utf-8"}[name])
+            if u.path in {"/","/app.js","/financial.js","/style.css"}:
+                name={"/":"index.html","/app.js":"app.js","/financial.js":"financial.js","/style.css":"style.css"}[u.path]
+                return self.respond((ROOT/"web"/name).read_text(encoding="utf8"),ctype='text/javascript; charset=utf-8' if name.endswith('.js') else 'text/css; charset=utf-8' if name.endswith('.css') else 'text/html; charset=utf-8')
             with connect() as db:
                 if u.path=="/api/health": return self.respond({"status":"ok","database":db.execute("PRAGMA integrity_check").fetchone()[0],"mode":"local_authenticated"})
                 if u.path=="/api/session":
@@ -74,6 +79,15 @@ class Handler(BaseHTTPRequestHandler):
                     return self.respond({"user":user,"plan":auth.plan(db,user) if user else None})
                 if u.path=="/api/config": return self.respond({"name":os.environ.get("APP_NAME","Observatório Legislativo Brasil"),"mode":"Instalação local • organizações isoladas","billing":"Não ativado","ai":"Busca documental; IA generativa não configurada"})
                 if u.path=="/api/automatic": return self.respond(automatic.status(db))
+                if u.path=='/api/financial/coverage':return self.respond(financial.status(db))
+                if u.path=='/api/financial':return self.respond(financial.query(db,p))
+                if u.path=='/api/financial/export':
+                    from .financial_exports import xlsx_export,pdf_export
+                    result=financial.query(db,p,export=True);form=p.get('format','csv')
+                    if form=='csv':return self.download(financial.csv_export(result),'text/csv; charset=utf-8','fiscalizacao-financeira.csv')
+                    if form=='xlsx':return self.download(xlsx_export(result),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','fiscalizacao-financeira.xlsx')
+                    if form=='pdf':return self.download(pdf_export(result),'application/pdf','fiscalizacao-financeira.pdf')
+                    raise ValueError('Formato inválido')
                 if u.path=="/api/politician":
                     return self.respond(productivity.dashboard(db,p.get("id",""),p.get("start",""),p.get("end",""),int(p.get("page",1)),int(p.get("size",20)),p.get("category","all")))
                 if u.path=="/api/coverage": return self.respond({"automatic":automatic.status(db),"sources":coverage(db),"runs":[dict(r) for r in db.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 30")],"jobs":[dict(r) for r in db.execute("SELECT * FROM jobs ORDER BY id DESC LIMIT 30")]})
@@ -138,6 +152,13 @@ class Handler(BaseHTTPRequestHandler):
                     auth.require(user,"superadmin")
                     db.execute("UPDATE sync_streams SET state='pending',failures=0,error=NULL,next_due=0 WHERE key=? AND state='dead'",(str(p.get("key","")),));db.commit()
                     return self.respond({"message":"Coleta reaberta para nova tentativa, preservando o cursor."})
+                if path=='/api/financial/sync':
+                    auth.require(user,'superadmin')
+                    financial.seed(db)
+                    key=financial.enqueue(db,str(p.get('source','')),int(p.get('year',0)),str(p.get('target','')))
+                    db.execute("UPDATE financial_sync_jobs SET state='pending',attempts=0,error=NULL,next_due=0 WHERE key=? AND state<>'running'",(key,))
+                    db.execute('INSERT INTO audit_log(tenant_id,user_id,action,created_at) VALUES(?,?,?,?)',(user['tenant_id'],user['id'],'financial_sync_requested:'+key,now()));db.commit()
+                    return self.respond({'message':'Consulta financeira enfileirada; dados anteriores preservados.','key':key},202)
                 if path=="/api/sync":
                     auth.require(user,"superadmin")
                     dataset=p.get("dataset")
@@ -178,6 +199,8 @@ def main():
     stop=threading.Event()
     if os.environ.get("AUTO_SYNC_ENABLED","1")!="0":
         threading.Thread(target=automatic.run,args=(stop,),daemon=True).start()
+    if os.environ.get('FINANCIAL_SYNC_ENABLED','1')!='0':
+        threading.Thread(target=financial.run,args=(stop,),daemon=True).start()
     try:server.serve_forever()
     finally:
         stop.set();server.server_close()

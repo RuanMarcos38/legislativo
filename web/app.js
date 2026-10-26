@@ -112,7 +112,7 @@ async function listing(kind,token){
   $("#results").textContent="Consultando a base local…";
   const data=await api("/api/search?"+params);if(token!==generation)return;
   $("#total").textContent=data.total.toLocaleString("pt-BR")+" registros";
-  const rows=data.items.map(r=>'<tr><td><button class="text-button record" data-id="'+e(r.id)+'">'+e(r.data.name)+'</button><p>'+e(r.data.description||r.data.role||"")+'</p></td><td>'+e(r.data.party||r.data.type||"—")+'</td><td>'+e(r.data.uf||r.data.year||"—")+'</td><td>'+e(r.source==="camara"?"Câmara":"Senado")+'</td><td>'+e(fmt(r.collected_at))+'</td></tr>').join("");
+  const rows=data.items.map(r=>'<tr><td><button class="text-button record" data-id="'+e(r.id)+'">'+e(r.data.name)+'</button><p>'+e(r.data.description||r.data.role||"")+'</p></td><td>'+e(r.data.party||r.data.type||"—")+'</td><td>'+e(r.data.uf||r.data.year||"—")+'</td><td>'+e(({camara:"Câmara",senado:"Senado",alesc:"ALESC"})[r.source]||r.source)+'</td><td>'+e(fmt(r.collected_at))+'</td></tr>').join("");
   $("#results").innerHTML=(rows?'<div class="table-wrap"><table><thead><tr><th>Nome / título</th><th>Partido / tipo</th><th>UF / ano</th><th>Fonte</th><th>Coletado em</th></tr></thead><tbody>'+rows+'</tbody></table></div>':empty("Nenhum registro encontrado","Ajuste os filtros ou execute uma coleta em Histórico e cobertura. Ausência na base não significa ausência de atuação."))+'<div class="pager"><span>Página '+page+' de '+Math.max(1,Math.ceil(data.total/20))+'</span><div><button class="secondary" id="previous" '+(page===1?"disabled":"")+'>Anterior</button><button class="secondary" id="next" '+(page*20>=data.total?"disabled":"")+'>Próxima</button></div></div>';
   $("#previous").onclick=()=>{page--;run().catch(showError);};$("#next").onclick=()=>{page++;run().catch(showError);};
   document.querySelectorAll(".record").forEach(b=>b.onclick=()=>openRecord(b.dataset.id));
@@ -143,6 +143,7 @@ function documentView(doc){
  return '<section class="panel"><h3>Documento oficial · '+e(section)+'</h3><div class="provenance">'+e(doc.note)+'<br><a href="'+e(doc.url)+'" target="_blank" rel="noopener noreferrer">Documento na fonte ↗</a> · '+e(fmt(doc.collected_at))+'</div>'+body+'<details><summary>Ver resposta original e links de paginação</summary><pre>'+e(JSON.stringify(payload,null,2))+'</pre></details></section>';
 }
 async function openRecord(id,details=false){
+ if(/^alesc:person:[0-9]+$/.test(id)){location.hash="financeiro/"+encodeURIComponent(id);return;}
  if(!details && /^(camara|senado):person:[0-9]+$/.test(id)){location.hash="politico/"+encodeURIComponent(id);return;}
  const dialog=$("#detail");$("#detail-body").textContent="Carregando registro…";if(!dialog.open)dialog.showModal();
  try{
@@ -194,11 +195,12 @@ async function render(){
  $("#account-menu").open=false;
  if(drawerOpen)closeNavigationDrawer(false);
  const token=++generation;route=location.hash.slice(1)||"inicio";if(route==="main")route="inicio";page=1;
- const activeHash=route.startsWith("politico/")?"#produtividade":"#"+route;
+ const activeHash=route.startsWith("financeiro")?"#financeiro":route.startsWith("politico/")?"#produtividade":"#"+route;
  document.querySelectorAll("#app-sidebar nav a").forEach(a=>{const active=a.hash===activeHash;a.classList.toggle("active",active);if(active)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current");});
  window.scrollTo(0,0);
  $("#content").textContent="Carregando…";
  try{
+ if(route==="financeiro"||route.startsWith("financeiro/")){await financialPage(route.includes("/")?decodeURIComponent(route.slice(11)):"",token);return;}
  if(route.startsWith("politico/")){await politician(decodeURIComponent(route.slice(9)),token);return;}
  switch(route){case "produtividade":await choosePolitician(token);break;case "inicio":await dashboard(token);break;case "pesquisa":case "parlamentares":await listing("person",token);break;case "projetos":await listing("proposal",token);break;case "votacoes":await listing("vote",token);break;case "historico":await history(token);break;case "monitoramentos":await watches(token);break;case "relatorios":reports();break;case "configuracoes":await settings(token);break;default:setTitle("Página não encontrada","Escolha uma seção no menu.");$("#content").innerHTML=empty("Página não encontrada","Use o menu para continuar.");}}
  catch(err){if(token===generation)showError(err);}
@@ -223,9 +225,9 @@ async function choosePolitician(token){
   const d=await api("/api/search?"+p);if(token!==generation||request!==requestVersion)return;
   const from=d.total?(peoplePage-1)*20+1:0,to=Math.min(peoplePage*20,d.total);
   const rows=d.items.map(r=>{
-   const url="#politico/"+encodeURIComponent(r.id),role=String(r.data.role||"");
-   const origin=role.toLowerCase().includes("não verificado")?"Autoria · mandato não verificado":"Cadastro da Casa";
-   return '<tr><td class="person-name"><a href="'+url+'">'+e(r.data.name)+'</a><small>'+e(role.toLowerCase().includes("não verificado")?"Identificado em autoria":role||"Identidade institucional")+'</small></td><td><span class="house-label">'+e(r.source==="camara"?"Câmara dos Deputados":"Senado Federal")+'</span></td><td class="party-cell">'+e(r.data.party||"Não informado")+'</td><td class="uf-cell">'+e(r.data.uf||"—")+'</td><td><span class="registry-label">'+e(origin)+'</span></td><td class="row-action"><a href="'+url+'" aria-label="Abrir dashboard de '+e(r.data.name)+'">Ver dashboard <span aria-hidden="true">↗</span></a></td></tr>';
+   const url=(r.source==="alesc"?"#financeiro/":"#politico/")+encodeURIComponent(r.id),role=String(r.data.role||"");
+   const origin=role.toLowerCase().includes("financeiro")?"Registro financeiro oficial":role.toLowerCase().includes("não verificado")?"Autoria · mandato não verificado":"Cadastro da Casa";
+   return '<tr><td class="person-name"><a href="'+url+'">'+e(r.data.name)+'</a><small>'+e(role.toLowerCase().includes("financeiro")?"Identificado em registro financeiro":role.toLowerCase().includes("não verificado")?"Identificado em autoria":role||"Identidade institucional")+'</small></td><td><span class="house-label">'+e(({camara:"Câmara dos Deputados",senado:"Senado Federal",alesc:"ALESC"})[r.source]||r.source)+'</span></td><td class="party-cell">'+e(r.data.party||"Não informado")+'</td><td class="uf-cell">'+e(r.data.uf||"—")+'</td><td><span class="registry-label">'+e(origin)+'</span></td><td class="row-action"><a href="'+url+'" aria-label="Abrir dashboard de '+e(r.data.name)+'">Ver dashboard <span aria-hidden="true">↗</span></a></td></tr>';
   }).join("");
   $("#people-options").innerHTML='<div class="directory-toolbar"><div><h2>Parlamentares</h2><p>Selecione um nome para abrir o dashboard individual.</p></div><span class="result-count">'+d.total.toLocaleString("pt-BR")+' registros</span></div>'+(rows?'<div class="table-wrap directory-scroll"><table class="people-table"><caption class="sr-only">Parlamentares encontrados e acesso ao dashboard individual</caption><thead><tr><th scope="col">Parlamentar</th><th scope="col">Casa legislativa</th><th scope="col">Partido</th><th scope="col">UF</th><th scope="col">Origem do registro</th><th scope="col" class="row-action">Acesso</th></tr></thead><tbody>'+rows+'</tbody></table></div>':empty("Nenhum parlamentar encontrado","Altere os filtros. A ausência na base não indica ausência de atuação."))+'<div class="directory-footer"><span>'+from.toLocaleString("pt-BR")+'–'+to.toLocaleString("pt-BR")+' de '+d.total.toLocaleString("pt-BR")+' registros · Página '+peoplePage+' de '+Math.max(1,Math.ceil(d.total/20))+'</span><div class="pagination-actions"><button class="secondary" id="people-prev" '+(peoplePage===1?"disabled":"")+'>← Anterior</button><button class="secondary" id="people-next" '+(to>=d.total?"disabled":"")+'>Próxima →</button></div></div><p class="directory-note">Identidades de Casas diferentes permanecem separadas. O cadastro na autoria de uma proposição não comprova o exercício atual de mandato.</p>';
   $("#people-options").removeAttribute("aria-busy");
@@ -237,7 +239,7 @@ async function choosePolitician(token){
 async function politician(id,token){
  setTitle("Atividade parlamentar","Carregando indicadores e evidências da fonte oficial.");
  let currentPage=1,params=new URLSearchParams({id,size:"20"});
- $("#content").innerHTML='<section class="panel"><form id="activity-filters" class="filters"><label class="field">Apresentados a partir de<input type="date" name="start"></label><label class="field">Apresentados até<input type="date" name="end"></label><label class="field grow">Exibir<select name="category"><option value="all">Todas as proposições</option><option value="projects">Projetos e PECs</option><option value="approved">Projetos com aprovação em etapa</option><option value="norms">Projetos com norma informada</option></select></label><button>Aplicar período</button><button type="button" class="secondary" id="refresh-politician">Atualizar painel</button></form></section><div id="activity-body">Consultando registros…</div>';
+ $("#content").innerHTML=financeTabs(id,"activity")+'<section class="panel"><form id="activity-filters" class="filters"><label class="field">Apresentados a partir de<input type="date" name="start"></label><label class="field">Apresentados até<input type="date" name="end"></label><label class="field grow">Exibir<select name="category"><option value="all">Todas as proposições</option><option value="projects">Projetos e PECs</option><option value="approved">Projetos com aprovação em etapa</option><option value="norms">Projetos com norma informada</option></select></label><button>Aplicar período</button><button type="button" class="secondary" id="refresh-politician">Atualizar painel</button></form></section><div id="activity-body">Consultando registros…</div>';
  $("#activity-filters").onsubmit=ev=>{ev.preventDefault();currentPage=1;load().catch(showError);};
  $("#refresh-politician").onclick=()=>load().catch(showError);
  async function load(){

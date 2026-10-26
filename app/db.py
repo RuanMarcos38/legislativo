@@ -14,8 +14,11 @@ def connect(path=None):
     db.row_factory=sqlite3.Row
     db.execute("PRAGMA foreign_keys=ON")
     db.execute("PRAGMA journal_mode=WAL")
+    try:applied={row[0] for row in db.execute('SELECT version FROM schema_versions')}
+    except sqlite3.OperationalError:applied=set()
     for migration in sorted((ROOT/"migrations").glob("*.sql")):
-        db.executescript(migration.read_text(encoding="utf8"))
+        version=int(migration.name.split('_')[0].split('.')[0])
+        if version not in applied:db.executescript(migration.read_text(encoding="utf8"))
     return db
 def upsert(db,source,kind,eid,url,raw,data):
     key=f"{source}:{kind}:{eid}"

@@ -23,6 +23,9 @@ def main():
     import threading
     from .automatic import run
     threading.Thread(target=run,daemon=True).start()
+    import os
+    from . import financial
+    if os.environ.get('FINANCIAL_SYNC_ENABLED','1')!='0':threading.Thread(target=financial.run,daemon=True).start()
     db=connect()
     try:
         while True:

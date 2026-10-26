@@ -140,8 +140,19 @@ class HTTP(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as cm:self.request("/api/watches",{"query":"excede plano"},headers)
         self.assertEqual(cm.exception.code,409)
     def test_static_assets_and_security_headers(self):
-        for path in ["/","/app.js","/style.css"]:
+        for path in ["/","/app.js","/financial.js","/style.css"]:
             with self.request(path) as r:
                 self.assertEqual(r.status,200);self.assertEqual(r.headers["X-Content-Type-Options"],"nosniff")
                 self.assertIn("frame-ancestors 'none'",r.headers["Content-Security-Policy"])
+    def test_financial_public_reads_export_and_restricted_sync(self):
+        with self.request('/api/financial?year=2026') as r:self.assertEqual(json.load(r)['totals'],[])
+        for form,signature in [('csv',b'\xef\xbb\xbf'),('xlsx',b'PK'),('pdf',b'%PDF')]:
+            with self.request('/api/financial/export?format='+form+'&year=2026') as r:
+                self.assertTrue(r.read().startswith(signature));self.assertIn('attachment',r.headers['Content-Disposition'])
+        with self.assertRaises(urllib.error.HTTPError) as cm:self.request('/api/financial/sync',{'source':'senado_ceaps','year':2026})
+        self.assertEqual(cm.exception.code,403)
+        with self.request('/api/login',{'email':'http@example.test','password':'http-password-123'}) as r:
+            cookie=r.headers['Set-Cookie'].split(';')[0];csrf=json.load(r)['csrf']
+        with self.assertRaises(urllib.error.HTTPError) as cm:self.request('/api/financial/sync',{'source':'senado_ceaps','year':2026},{'Cookie':cookie,'X-CSRF-Token':csrf})
+        self.assertEqual(cm.exception.code,403)
 if __name__=="__main__":unittest.main()
