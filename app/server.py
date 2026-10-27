@@ -5,7 +5,7 @@ from collections import defaultdict,deque
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from .db import connect,search,serialize,now,ROOT
 from .connectors import detail
-from . import automatic,productivity,financial
+from . import automatic,productivity,financial,presentation
 import threading
 SOURCES=[
 ("camara","Câmara dos Deputados","https://dadosabertos.camara.leg.br/swagger/api.html","Atualização automática: deputados, proposições, autoria, tramitação e votações. Consulte o progresso e a cobertura."),
@@ -33,6 +33,8 @@ def report_csv(result,filters):
     writer.writerow(["ID","Nome / título","Fonte","URL oficial","Coleta UTC","Hash SHA256"])
     for r in result["items"]: writer.writerow([safe_cell(x) for x in [r["id"],r["data"].get("name"),r["source"],r["url"],r["collected_at"],r["hash"]]])
     return "\ufeff"+buf.getvalue()
+class RestrictedAdministration(Exception):pass
+
 class Handler(BaseHTTPRequestHandler):
     server_version="Observatorio/0.1"
     rates=defaultdict(deque)
@@ -42,6 +44,12 @@ class Handler(BaseHTTPRequestHandler):
         try: cookie.load(self.headers.get("Cookie",""))
         except Exception: return None
         return auth.session(db,cookie["session"].value if "session" in cookie else None)
+    def technical_view(self,db,params):
+        if params.get('technical')!='1':return False
+        user=self.current_user(db)
+        if not user:raise PermissionError()
+        if user['role']!='superadmin':raise RestrictedAdministration()
+        return True
     def headers_common(self,ctype):
         self.send_header("Content-Type",ctype)
         self.send_header("X-Content-Type-Options","nosniff")
@@ -79,10 +87,13 @@ class Handler(BaseHTTPRequestHandler):
                 if u.path=="/api/session":
                     user=self.current_user(db)
                     return self.respond({"user":user,"plan":auth.plan(db,user) if user else None})
-                if u.path=="/api/config": return self.respond({"name":os.environ.get("APP_NAME","Observatório Legislativo Brasil"),"mode":"Instalação local • organizações isoladas","billing":"Não ativado","ai":"Busca documental; IA generativa não configurada"})
-                if u.path=="/api/automatic": return self.respond(automatic.status(db))
-                if u.path=='/api/financial/coverage':return self.respond(financial.status(db))
-                if u.path=='/api/financial':return self.respond(financial.query(db,p))
+                if u.path=="/api/config": return self.respond({"name":os.environ.get("APP_NAME","Observatório Legislativo Brasil"),"mode":"Instalação local • organizações isoladas","billing":"Não ativado","ai":"Busca documental; IA generativa não configurada"} if self.technical_view(db,p) else {"name":os.environ.get("APP_NAME","Observatório Legislativo Brasil")})
+                if u.path=="/api/automatic":
+                    result=automatic.status(db);return self.respond(result if self.technical_view(db,p) else presentation.automatic(result))
+                if u.path=="/api/financial/coverage":
+                    result=financial.status(db);return self.respond(result if self.technical_view(db,p) else presentation.finance_coverage(result))
+                if u.path=="/api/financial":
+                    result=financial.query(db,p);return self.respond(result if self.technical_view(db,p) else presentation.financial(result))
                 if u.path=='/api/financial/export':
                     from .financial_exports import xlsx_export,pdf_export
                     result=financial.query(db,p,export=True);form=p.get('format','csv')
@@ -91,8 +102,10 @@ class Handler(BaseHTTPRequestHandler):
                     if form=='pdf':return self.download(pdf_export(result),'application/pdf','fiscalizacao-financeira.pdf')
                     raise ValueError('Formato inválido')
                 if u.path=="/api/politician":
-                    return self.respond(productivity.dashboard(db,p.get("id",""),p.get("start",""),p.get("end",""),int(p.get("page",1)),int(p.get("size",20)),p.get("category","all")))
-                if u.path=="/api/coverage": return self.respond({"automatic":automatic.status(db),"sources":coverage(db),"runs":[dict(r) for r in db.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 30")],"jobs":[dict(r) for r in db.execute("SELECT * FROM jobs ORDER BY id DESC LIMIT 30")]})
+                    return self.respond(presentation.politician(productivity.dashboard(db,p.get("id",""),p.get("start",""),p.get("end",""),int(p.get("page",1)),int(p.get("size",20)),p.get("category","all"))))
+                if u.path=="/api/coverage":
+                    result={"automatic":automatic.status(db),"sources":coverage(db),"runs":[dict(r) for r in db.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 30")],"jobs":[dict(r) for r in db.execute("SELECT * FROM jobs ORDER BY id DESC LIMIT 30")]}
+                    return self.respond(result if self.technical_view(db,p) else presentation.coverage(result))
                 if u.path in {"/api/search","/api/export"}:
                     kind=p.get("kind","person")
                     if kind not in {"person","proposal","vote","document"}: raise ValueError("Tipo inválido")
@@ -113,6 +126,7 @@ class Handler(BaseHTTPRequestHandler):
                     user=self.current_user(db)
                     return self.respond({"watches":auth.watches(db,user),"events":auth.events(db,user)})
                 return self.respond({"error":"Rota não encontrada"},404)
+        except RestrictedAdministration: self.respond({"error":"Área reservada à administração"},403)
         except KeyError: self.respond({"error":"Parlamentar não encontrado"},404)
         except PermissionError: self.respond({"error":"Entre com sua conta para acessar esta área"},401)
         except (ValueError,TypeError): self.respond({"error":"Parâmetros inválidos"},400)
@@ -188,6 +202,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond({"error":"Rota não encontrada"},404)
         except PermissionError: self.respond({"error":"Entre com uma conta autorizada para esta ação"},403)
         except (ValueError,TypeError,sqlite3.IntegrityError): self.respond({"error":"Entrada inválida"},400)
+        except RestrictedAdministration: self.respond({"error":"Área reservada à administração"},403)
         except KeyError: self.respond({"error":"Registro não encontrado"},404)
         except Exception: self.respond({"error":"Fonte indisponível ou contrato alterado. Nenhum resultado foi inventado."},502)
 class LocalServer(ThreadingHTTPServer):

@@ -144,6 +144,15 @@ class HTTP(unittest.TestCase):
             with self.request("/api/watches",{"query":"termo "+str(n)},headers) as r:self.assertEqual(r.status,201)
         with self.assertRaises(urllib.error.HTTPError) as cm:self.request("/api/watches",{"query":"excede plano"},headers)
         self.assertEqual(cm.exception.code,409)
+    def test_public_pages_hide_operator_details(self):
+        for path in ['/api/config','/api/automatic','/api/coverage','/api/financial/coverage']:
+            with self.request(path) as response:data=json.load(response)
+            if path=='/api/config':self.assertEqual(set(data),{'name'})
+            if path=='/api/automatic':self.assertEqual(data['streams'],[])
+            if path=='/api/coverage':self.assertEqual(data['runs'],[]);self.assertEqual(data['jobs'],[])
+            if path=='/api/financial/coverage':self.assertEqual(data['jobs'],[])
+            with self.assertRaises(urllib.error.HTTPError) as cm:self.request(path+'?technical=1')
+            self.assertEqual(cm.exception.code,401)
     def test_static_assets_and_security_headers(self):
         for path in ["/","/app.js","/financial.js","/style.css"]:
             with self.request(path) as r:
