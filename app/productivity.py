@@ -1,13 +1,14 @@
 """Source-backed per-person activity. No ratings or inferred individual votes."""
 from datetime import date
 from .db import serialize
+from .calculations import ratio
 from .automatic import PROJECT_TYPES,author_stream
 
-def dashboard(db,key,start="",end="",page=1,size=20,category="all"):
+def dashboard(db,key,start="",end="",page=1,size=20,category="all",export=False):
     person=db.execute("SELECT * FROM records WHERE id=? AND kind='person'",(key,)).fetchone()
     if not person:raise KeyError(key)
     if person["source"] not in {"camara","senado"}:raise ValueError("Fonte não integrada")
-    if not 1<=page<=100000 or not 1<=size<=100:raise ValueError("Paginação inválida")
+    if not 1<=page<=100000 or not 1<=size<=(10000 if export else 100):raise ValueError("Paginação inválida")
     for value in (start,end):
         if value:date.fromisoformat(value)
     if start and end and start>end:raise ValueError("Período inválido")
@@ -31,6 +32,7 @@ def dashboard(db,key,start="",end="",page=1,size=20,category="all"):
     unknown_dates=db.execute("""SELECT COUNT(*) FROM authorships a JOIN proposal_facts f ON f.proposal_id=a.proposal_id
        WHERE a.person_id=? AND (f.presented_at IS NULL OR f.presented_at='')""",(key,)).fetchone()[0]
     selected=rows if category=="all" else projects if category=="projects" else approved if category=="approved" else norms
+    if export and len(selected)>10000:raise ValueError("Refine o período para até 10000 registros")
     items=[]
     for row in selected[(page-1)*size:page*size]:
         r=serialize(row)
@@ -58,6 +60,7 @@ def dashboard(db,key,start="",end="",page=1,size=20,category="all"):
           authorship_unspecified=sum(r["relation"]=="author_unspecified" for r in rows),
           projects_with_approval_stage=len(approved),projects_history_checked=len(checked),
           projects_history_pending=len(projects)-len(checked),norms_reported=len(norms),
+          observed_stage_rate=ratio(sum(bool(r["has_approval"]) for r in checked),len(checked)),
           laws_publication_verified=None,implementation_verified=None,unknown_presentation_dates=unknown_dates),
         timeline=sorted(groups.values(),key=lambda r:r["year"]),statuses=statuses,
         sync=dict(state=stream["state"],pages=stream["pages"],items=stream["items"],

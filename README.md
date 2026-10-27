@@ -44,3 +44,8 @@ Veja [operação e recuperação](docs/OPERACAO.md), [arquitetura e segurança](
 Esta versão não é o SaaS nacional completo. Next.js/PostgreSQL são preferidos na especificação; a base executável usa Python/SQLite para permitir operação verificável sem provisionar serviços ou reutilizar credenciais. O isolamento é aplicado no servidor e testado, mas não há PostgreSQL/RLS, MFA, checkout, envio de e-mails, IA generativa ou ingestão nacional. Leis, TSE, assembleias, municípios e SAPL ainda não estão integrados. Nenhuma implantação pública foi realizada.
 
 A plataforma informa e não recomenda voto. Proposta não equivale a lei publicada; publicação não comprova implementação; votos simbólicos não são convertidos em votos individuais.
+
+
+## Economia e comparações
+
+A evolução preserva os módulos anteriores. Consulte [operação, fontes, limites e rollback](docs/EVOLUCAO_ECONOMIA.md). Novas áreas: Brasil em números, comparação de governos, atividade observada por Casa, cadastros partidários e supervisão das fontes. Dados não integrados não recebem valores simulados.

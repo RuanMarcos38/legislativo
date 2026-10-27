@@ -535,3 +535,21 @@ nav{gap:2px}
 @media(max-width:375px){.app-shell .finance-filters,.app-shell .finance-unavailable,.app-shell .finance-stats{grid-template-columns:minmax(0,1fr)}}
 
 [hidden]{display:none!important}
+
+/* New analytics modules share the approved colors and table layout. */
+.app-shell .economic-stats{grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}
+.app-shell .economic-stats .stat{min-width:0;height:100%;border-bottom:1px solid var(--line)}
+.app-shell .economic-stats .economic-value{font-size:22px;overflow-wrap:anywhere;line-height:1.3}
+.economic-stats details{font-size:12px}.economic-stats h2.label{font-size:13px;line-height:1.5;min-height:38px}
+.economic-figure{margin:20px 0;min-width:0}.economic-chart{display:block;width:100%;height:auto;max-height:360px;background:#fff}
+.economic-figure figcaption{font-size:12px;line-height:1.7;margin:10px 0;color:#42546a}
+.chart-legend{font-weight:600}.legend-0{color:#1558bc}.legend-1{color:#8b3db7}.legend-2{color:#008675}.legend-3{color:#ab611b}
+.term-options{border:1px solid var(--line);border-radius:6px;padding:14px;margin:0 0 16px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.term-options legend{font-weight:600;padding:0 6px}.term-options label{display:flex;align-items:center;gap:8px;font-size:12px}.term-options input{width:auto;min-height:0;flex-shrink:0}
+.export-actions{flex-wrap:wrap}.economic-stats p{font-size:12px}.economic-stats details p{overflow-wrap:anywhere}
+@media(max-width:1100px){.app-shell .economic-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.term-options{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.app-shell .economic-stats{grid-template-columns:minmax(0,1fr)}.term-options{grid-template-columns:minmax(0,1fr)}.economic-chart{min-height:190px}.economic-stats h2.label{min-height:0}}
+
+.app-shell .economic-stats .stat>p{margin:4px 0}.app-shell .economic-stats .stat>h2{margin:0 0 4px}.app-shell .economic-stats .stat>details{margin-top:4px}
+
+.economic-figure{max-width:100%;overflow-x:auto}.mobile-chart-hint{display:none}@media(max-width:600px){.economic-chart{min-width:780px;height:260px}.mobile-chart-hint{display:block;font-size:12px;color:#42546a}}

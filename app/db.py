@@ -7,18 +7,22 @@ class Connection(sqlite3.Connection):
     def __exit__(self,kind,value,trace):
         try: return super().__exit__(kind,value,trace)
         finally: self.close()
-def connect(path=None):
+def connect(path=None,migrate=True):
     path=Path(path or os.environ.get("DATABASE_PATH",ROOT/"data"/"observatorio.db"))
     path.parent.mkdir(parents=True,exist_ok=True)
     db=sqlite3.connect(path,timeout=30,factory=Connection)
     db.row_factory=sqlite3.Row
     db.execute("PRAGMA foreign_keys=ON")
     db.execute("PRAGMA journal_mode=WAL")
-    try:applied={row[0] for row in db.execute('SELECT version FROM schema_versions')}
-    except sqlite3.OperationalError:applied=set()
-    for migration in sorted((ROOT/"migrations").glob("*.sql")):
-        version=int(migration.name.split('_')[0].split('.')[0])
-        if version not in applied:db.executescript(migration.read_text(encoding="utf8"))
+    if migrate:
+        try:
+            try:applied={row[0] for row in db.execute('SELECT version FROM schema_versions')}
+            except sqlite3.OperationalError:applied=set()
+            for migration in sorted((ROOT/"migrations").glob("*.sql")):
+                version=int(migration.name.split('_')[0].split('.')[0])
+                if version not in applied:db.executescript(migration.read_text(encoding="utf8"))
+        except Exception:
+            db.close();raise
     return db
 def upsert(db,source,kind,eid,url,raw,data):
     key=f"{source}:{kind}:{eid}"

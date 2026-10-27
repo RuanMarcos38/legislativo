@@ -1,11 +1,12 @@
 import csv,io,json,os,secrets,sqlite3,time,urllib.parse,hashlib
 from http.cookies import SimpleCookie
 from . import auth
+from .calculations import brasilia
 from collections import defaultdict,deque
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from .db import connect,search,serialize,now,ROOT
 from .connectors import detail
-from . import automatic,productivity,financial,presentation
+from . import automatic,productivity,financial,presentation,economy,governments,rankings,analytics,source_monitor
 import threading
 SOURCES=[
 ("camara","Câmara dos Deputados","https://dadosabertos.camara.leg.br/swagger/api.html","Atualização automática: deputados, proposições, autoria, tramitação e votações. Consulte o progresso e a cobertura."),
@@ -77,16 +78,27 @@ class Handler(BaseHTTPRequestHandler):
         if not self.guard(): return
         try:
             u=urllib.parse.urlsplit(self.path); p={k:v[0] for k,v in urllib.parse.parse_qs(u.query).items()}
-            if u.path in {"/","/app.js","/financial.js","/style.css"}:
-                name={"/":"index.html","/app.js":"app.js","/financial.js":"financial.js","/style.css":"style.css"}[u.path]
+            if u.path in {"/","/app.js","/financial.js","/analytics.js","/style.css"}:
+                name={"/":"index.html","/app.js":"app.js","/financial.js":"financial.js","/analytics.js":"analytics.js","/style.css":"style.css"}[u.path]
                 return self.respond((ROOT/"web"/name).read_text(encoding="utf8"),ctype='text/javascript; charset=utf-8' if name.endswith('.js') else 'text/css; charset=utf-8' if name.endswith('.css') else 'text/html; charset=utf-8')
-            with connect() as db:
+            with connect(migrate=False) as db:
                 if u.path=="/api/health":
                     db.execute("SELECT 1").fetchone()
                     return self.respond({"status":"ok","database":"ok","database_check":"read_probe","integrity_check":"not_run","mode":"local_authenticated"})
                 if u.path=="/api/session":
                     user=self.current_user(db)
                     return self.respond({"user":user,"plan":auth.plan(db,user) if user else None})
+                if u.path=='/api/source-status':return self.respond(source_monitor.status(db,self.technical_view(db,p)))
+                if u.path=='/api/economic-revisions':return self.respond(economy.revisions(db,p))
+                if u.path=='/api/economy':return self.respond(economy.snapshot(db,p,self.technical_view(db,p)))
+                if u.path=='/api/governments':return self.respond(governments.compare(db,p))
+                if u.path=='/api/rankings':return self.respond(rankings.query(db,p))
+                if u.path=='/api/assistant':return self.respond(analytics.answer(db,p))
+                if u.path=='/api/analytics/export':
+                    from .analytics_exports import export
+                    title,rows,meta=analytics.dataset(db,p.get('module','economy'),p)
+                    body,ctype=export(title,rows,meta,p.get('format','json'))
+                    return self.download(body,ctype,'observatorio-relatorio.'+p.get('format','json'))
                 if u.path=="/api/config": return self.respond({"name":os.environ.get("APP_NAME","Observatório Legislativo Brasil"),"mode":"Instalação local • organizações isoladas","billing":"Não ativado","ai":"Busca documental; IA generativa não configurada"} if self.technical_view(db,p) else {"name":os.environ.get("APP_NAME","Observatório Legislativo Brasil")})
                 if u.path=="/api/automatic":
                     result=automatic.status(db);return self.respond(result if self.technical_view(db,p) else presentation.automatic(result))
@@ -96,7 +108,8 @@ class Handler(BaseHTTPRequestHandler):
                     result=financial.query(db,p);return self.respond(result if self.technical_view(db,p) else presentation.financial(result))
                 if u.path=='/api/financial/export':
                     from .financial_exports import xlsx_export,pdf_export
-                    result=financial.query(db,p,export=True);form=p.get('format','csv')
+                    result=financial.query(db,p,export=True);form=p.get('format','csv');result['issued_at_brasilia']=brasilia()
+                    if form=='json':return self.download(json.dumps(presentation.financial(result),ensure_ascii=False,indent=2),'application/json; charset=utf-8','fiscalizacao-financeira.json')
                     if form=='csv':return self.download(financial.csv_export(result),'text/csv; charset=utf-8','fiscalizacao-financeira.csv')
                     if form=='xlsx':return self.download(xlsx_export(result),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','fiscalizacao-financeira.xlsx')
                     if form=='pdf':return self.download(pdf_export(result),'application/pdf','fiscalizacao-financeira.pdf')
@@ -143,7 +156,7 @@ class Handler(BaseHTTPRequestHandler):
             if not 0<length<=4096: raise ValueError()
             p=json.loads(self.rfile.read(length))
             if not isinstance(p,dict): raise ValueError()
-            with connect() as db:
+            with connect(migrate=False) as db:
                 path=urllib.parse.urlsplit(self.path).path
                 if path=="/api/login":
                     email=p.get("email","");password=p.get("password","")
@@ -164,6 +177,12 @@ class Handler(BaseHTTPRequestHandler):
                     db.execute("DELETE FROM sessions WHERE id=?",(hashlib.sha256(token.encode()).hexdigest(),));db.commit()
                     self.set_cookie="session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
                     return self.respond({"message":"Sessão encerrada"})
+                if path=="/api/economy/sync":
+                    auth.require(user,"superadmin")
+                    economy.seed(db)
+                    db.execute("UPDATE economic_jobs SET next_due=0,state='pending' WHERE state<>'running'")
+                    db.execute("INSERT INTO audit_log(tenant_id,user_id,action,created_at) VALUES(?,?,?,?)",(user['tenant_id'],user['id'],'economic_refresh_requested',now()));db.commit()
+                    return self.respond({"message":"Consulta oficial solicitada. A publicação dos indicadores segue o calendário de cada órgão."},202)
                 if path=="/api/automatic/retry":
                     auth.require(user,"superadmin")
                     db.execute("UPDATE sync_streams SET state='pending',failures=0,error=NULL,next_due=0 WHERE key=? AND state='dead'",(str(p.get("key","")),));db.commit()
@@ -210,10 +229,15 @@ class LocalServer(ThreadingHTTPServer):
     allow_reuse_address=False
 
 def main():
+    # Apply additive migrations before any collector thread or public request.
+    with connect() as db:db.execute("SELECT 1").fetchone()
     port=int(os.environ.get("PORT","8080"))
     server=LocalServer((os.environ.get("BIND_HOST","127.0.0.1"),port),Handler)
     print(f"Observatório local: http://127.0.0.1:{port}",flush=True)
     stop=threading.Event()
+    if os.environ.get("ECONOMIC_SYNC_ENABLED","1")!="0":
+        threading.Thread(target=economy.run,args=(stop,),daemon=True).start()
+        threading.Thread(target=source_monitor.run,args=(stop,),daemon=True).start()
     if os.environ.get("AUTO_SYNC_ENABLED","1")!="0":
         threading.Thread(target=automatic.run,args=(stop,),daemon=True).start()
     if os.environ.get('FINANCIAL_SYNC_ENABLED','1')!='0':

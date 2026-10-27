@@ -9,6 +9,7 @@ from collections import Counter
 from datetime import date
 from decimal import Decimal,InvalidOperation
 from .db import connect,now,upsert
+from .calculations import brasilia
 
 CAMARA='https://dadosabertos.camara.leg.br/api/v2/'
 SENADO='https://adm.senado.gov.br/adm-dadosabertos/api/v1/senadores/despesas_ceaps/'
@@ -392,7 +393,7 @@ def _query(db,params,export=False):
 
 def csv_export(result):
     b=io.StringIO(newline='');w=csv.writer(b,delimiter=';')
-    w.writerow(['Fiscalização Financeira','Emissão UTC',now(),'Escopo',dump(result['filters']),'Cobertura parcial','Registros',result['total']])
+    w.writerow(['Fiscalização Financeira','Emissão Horário de Brasília',brasilia(),'Emissão UTC',now(),'Escopo',dump(result['filters']),'Cobertura parcial','Registros',result['total']])
     columns=['id','person_id','person_name','institution','mandate','year','month','document_date','expense_date','payment_date','category','description','supplier','amount','gross','disallowed','currency','nature','verification','verification_note','document_number','source_url','receipt_url','collected_at','source_updated_at']
     w.writerow(columns)
     for row in result['items']:
