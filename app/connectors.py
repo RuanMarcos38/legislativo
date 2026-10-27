@@ -76,6 +76,8 @@ def detail(db,key,section="detail"):
     record=db.execute("SELECT * FROM records WHERE id=?",(key,)).fetchone()
     if not record: raise KeyError(key)
     source,kind,eid=record["source"],record["kind"],record["external_id"]
+    if source not in {"camara","senado"}:
+        raise ValueError("Detalhamento legislativo não integrado para esta instituição")
     if source=="senado":
         if section!="detail": raise ValueError("Seção não integrada para Senado")
         url=SENADO+"senador/"+urllib.parse.quote(eid,safe="")+".json"

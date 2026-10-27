@@ -60,6 +60,11 @@ class Core(unittest.TestCase):
     def test_source_allowlist(self):
         for url in ["http://dadosabertos.camara.leg.br/","https://localhost/","https://dadosabertos.camara.leg.br.evil.test/","https://dadosabertos.camara.leg.br:444/","https://user:pass@dadosabertos.camara.leg.br/"]:
             with self.assertRaises(ValueError): validate_url(url)
+    def test_new_financial_identity_is_not_routed_to_another_house(self):
+        key=self.put('15739','Identidade estadual',source='alesc')
+        with patch('app.connectors.fetch') as fetcher:
+            with self.assertRaises(ValueError):detail(self.db,key,'detail')
+            fetcher.assert_not_called()
     def test_real_contract_shapes_using_test_only_fixture(self):
         eid,data=person("senado",{"IdentificacaoParlamentar":{"CodigoParlamentar":"123","NomeParlamentar":"Teste","UfParlamentar":"DF"}})
         self.assertEqual(eid,"123");self.assertEqual(data["uf"],"DF")
@@ -139,9 +144,29 @@ class HTTP(unittest.TestCase):
             with self.request("/api/watches",{"query":"termo "+str(n)},headers) as r:self.assertEqual(r.status,201)
         with self.assertRaises(urllib.error.HTTPError) as cm:self.request("/api/watches",{"query":"excede plano"},headers)
         self.assertEqual(cm.exception.code,409)
+    def test_public_pages_hide_operator_details(self):
+        for path in ['/api/config','/api/automatic','/api/coverage','/api/financial/coverage']:
+            with self.request(path) as response:data=json.load(response)
+            if path=='/api/config':self.assertEqual(set(data),{'name'})
+            if path=='/api/automatic':self.assertEqual(data['streams'],[])
+            if path=='/api/coverage':self.assertEqual(data['runs'],[]);self.assertEqual(data['jobs'],[])
+            if path=='/api/financial/coverage':self.assertEqual(data['jobs'],[])
+            with self.assertRaises(urllib.error.HTTPError) as cm:self.request(path+'?technical=1')
+            self.assertEqual(cm.exception.code,401)
     def test_static_assets_and_security_headers(self):
-        for path in ["/","/app.js","/style.css"]:
+        for path in ["/","/app.js","/financial.js","/style.css"]:
             with self.request(path) as r:
                 self.assertEqual(r.status,200);self.assertEqual(r.headers["X-Content-Type-Options"],"nosniff")
                 self.assertIn("frame-ancestors 'none'",r.headers["Content-Security-Policy"])
+    def test_financial_public_reads_export_and_restricted_sync(self):
+        with self.request('/api/financial?year=2026') as r:self.assertEqual(json.load(r)['totals'],[])
+        for form,signature in [('csv',b'\xef\xbb\xbf'),('xlsx',b'PK'),('pdf',b'%PDF')]:
+            with self.request('/api/financial/export?format='+form+'&year=2026') as r:
+                self.assertTrue(r.read().startswith(signature));self.assertIn('attachment',r.headers['Content-Disposition'])
+        with self.assertRaises(urllib.error.HTTPError) as cm:self.request('/api/financial/sync',{'source':'senado_ceaps','year':2026})
+        self.assertEqual(cm.exception.code,403)
+        with self.request('/api/login',{'email':'http@example.test','password':'http-password-123'}) as r:
+            cookie=r.headers['Set-Cookie'].split(';')[0];csrf=json.load(r)['csrf']
+        with self.assertRaises(urllib.error.HTTPError) as cm:self.request('/api/financial/sync',{'source':'senado_ceaps','year':2026},{'Cookie':cookie,'X-CSRF-Token':csrf})
+        self.assertEqual(cm.exception.code,403)
 if __name__=="__main__":unittest.main()

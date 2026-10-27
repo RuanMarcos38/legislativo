@@ -4,6 +4,8 @@ const e=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",
 const fmt=d=>d?new Date(d).toLocaleString("pt-BR"):"Não coletado";
 const labels={idle:"Consulta concluída",retry:"Nova tentativa",partial:"Parcial",not_synced:"Sem coleta",not_integrated:"Não integrado",failed:"Falhou",complete_query:"Consulta concluída",running:"Em andamento",pending:"Na fila",done:"Processado",dead:"Requer revisão"};
 let csrf="";
+let currentSession=null;
+function canManage(){return currentSession?.user?.role==="superadmin";}
 let politicianTimer=null;
 let route="inicio",page=1,lastParams=new URLSearchParams(),generation=0;
 async function api(path,body){
@@ -40,12 +42,14 @@ function closeNavigationDrawer(restoreFocus=true){
  if(wasOpen&&restoreFocus)$("#sidebar-toggle").focus();
 }
 function updateSessionChrome(session,unavailable=false){
+ currentSession=session;
+ $("#admin-settings-nav").hidden=!canManage();
  const user=session?.user;
  const roles={superadmin:"Administrador global",admin:"Administrador da organização",analyst:"Analista",reader:"Leitor"};
  $("#account-name").textContent=unavailable?"Sessão não verificada":user?.email||"Acesso público";
- $("#account-role").textContent=unavailable?"Verifique em Configurações":user?roles[user.role]||user.role:"Consulta de dados oficiais";
- $("#account-context").textContent=unavailable?"Não foi possível consultar a sessão. Acesse Configurações para verificar.":user?(user.tenant+" · "+(roles[user.role]||user.role)):"Acesso público. Entre para gerenciar sua organização e seus monitoramentos.";
- $("#account-settings-link").textContent=user?"Minha conta e configurações":"Entrar na organização";
+ $("#account-role").textContent=unavailable?"Verifique sua conta":user?roles[user.role]||user.role:"Consulta de dados oficiais";
+ $("#account-context").textContent=unavailable?"Não foi possível consultar a sessão. Acesse sua conta para verificar.":user?(user.tenant+" · "+(roles[user.role]||user.role)):"Acesso público. Entre para gerenciar sua organização e seus monitoramentos.";
+ $("#account-settings-link").textContent=user?"Minha conta":"Entrar na conta";
  $("#account-menu summary").setAttribute("aria-label","Conta e permissões: "+$("#account-name").textContent);
 }
 function updateSyncChrome(data){
@@ -53,7 +57,7 @@ function updateSyncChrome(data){
  const issues=(data.states?.retry||0)+(data.states?.dead||0);
  const state=!data.worker_online?"offline":issues?"warning":"online";
  $("#sync-status-link").dataset.state=state;
- $("#sync-status-label").textContent=!data.worker_online?"Sem sinal de coleta":issues?"Coleta com ocorrências":"Coleta em execução";
+ $("#sync-status-label").textContent=!data.worker_online?"Atualização não confirmada":issues?"Atualização com atraso":"Atualizando os dados";
  $("#sync-status-link").title=(data.last_heartbeat?"Último sinal: "+fmt(new Date(data.last_heartbeat*1000).toISOString()):"Nenhum sinal recente do processo de coleta.")+(issues?" · "+issues+" consultas com falha ou nova tentativa.":"")+" Consulte o histórico e a cobertura.";
 }
 async function refreshSyncChrome(){
@@ -112,7 +116,7 @@ async function listing(kind,token){
   $("#results").textContent="Consultando a base local…";
   const data=await api("/api/search?"+params);if(token!==generation)return;
   $("#total").textContent=data.total.toLocaleString("pt-BR")+" registros";
-  const rows=data.items.map(r=>'<tr><td><button class="text-button record" data-id="'+e(r.id)+'">'+e(r.data.name)+'</button><p>'+e(r.data.description||r.data.role||"")+'</p></td><td>'+e(r.data.party||r.data.type||"—")+'</td><td>'+e(r.data.uf||r.data.year||"—")+'</td><td>'+e(r.source==="camara"?"Câmara":"Senado")+'</td><td>'+e(fmt(r.collected_at))+'</td></tr>').join("");
+  const rows=data.items.map(r=>'<tr><td><button class="text-button record" data-id="'+e(r.id)+'">'+e(r.data.name)+'</button><p>'+e(r.data.description||r.data.role||"")+'</p></td><td>'+e(r.data.party||r.data.type||"—")+'</td><td>'+e(r.data.uf||r.data.year||"—")+'</td><td>'+e(({camara:"Câmara",senado:"Senado",alesc:"ALESC"})[r.source]||r.source)+'</td><td>'+e(fmt(r.collected_at))+'</td></tr>').join("");
   $("#results").innerHTML=(rows?'<div class="table-wrap"><table><thead><tr><th>Nome / título</th><th>Partido / tipo</th><th>UF / ano</th><th>Fonte</th><th>Coletado em</th></tr></thead><tbody>'+rows+'</tbody></table></div>':empty("Nenhum registro encontrado","Ajuste os filtros ou execute uma coleta em Histórico e cobertura. Ausência na base não significa ausência de atuação."))+'<div class="pager"><span>Página '+page+' de '+Math.max(1,Math.ceil(data.total/20))+'</span><div><button class="secondary" id="previous" '+(page===1?"disabled":"")+'>Anterior</button><button class="secondary" id="next" '+(page*20>=data.total?"disabled":"")+'>Próxima</button></div></div>';
   $("#previous").onclick=()=>{page--;run().catch(showError);};$("#next").onclick=()=>{page++;run().catch(showError);};
   document.querySelectorAll(".record").forEach(b=>b.onclick=()=>openRecord(b.dataset.id));
@@ -143,6 +147,7 @@ function documentView(doc){
  return '<section class="panel"><h3>Documento oficial · '+e(section)+'</h3><div class="provenance">'+e(doc.note)+'<br><a href="'+e(doc.url)+'" target="_blank" rel="noopener noreferrer">Documento na fonte ↗</a> · '+e(fmt(doc.collected_at))+'</div>'+body+'<details><summary>Ver resposta original e links de paginação</summary><pre>'+e(JSON.stringify(payload,null,2))+'</pre></details></section>';
 }
 async function openRecord(id,details=false){
+ if(/^alesc:person:[0-9]+$/.test(id)){location.hash="financeiro/"+encodeURIComponent(id);return;}
  if(!details && /^(camara|senado):person:[0-9]+$/.test(id)){location.hash="politico/"+encodeURIComponent(id);return;}
  const dialog=$("#detail");$("#detail-body").textContent="Carregando registro…";if(!dialog.open)dialog.showModal();
  try{
@@ -161,7 +166,12 @@ async function openRecord(id,details=false){
 }
 async function history(token){
  setTitle("Histórico e cobertura","Consulte as lacunas, execuções e documentos efetivamente coletados.");
- const d=await api("/api/coverage");if(token!==generation)return;
+ const d=await api("/api/coverage"+(canManage()?"?technical=1":""));if(token!==generation)return;
+ if(!canManage()){
+ setTitle("De onde vêm os dados","Confira as fontes oficiais e os períodos disponíveis para consulta.");
+ $("#content").innerHTML='<section class="panel"><h2>Fontes e períodos disponíveis</h2><p>Os dados são atualizados aos poucos. Um histórico incompleto não significa falta de atuação do parlamentar.</p>'+d.sources.map(s=>sourceCard(s)+'<p>Anos encontrados: '+e(s.observed_years.join(", ")||"Ainda não disponíveis")+'. '+e(s.historical_coverage)+'</p>').join("")+'<button id="refresh" class="secondary">Atualizar consulta</button></section>';
+ $("#refresh").onclick=()=>history(token).catch(showError);await automaticPanel(d.automatic,token);return;
+ }
  $("#content").innerHTML='<section class="panel"><h2>Coleta de dados oficiais</h2><p>Enfileire uma consulta e execute o processo de coleta local. O serviço automático percorre todas as páginas, preserva o progresso e atualiza os dados periodicamente. Os botões abaixo mantêm as consultas manuais delimitadas da versão anterior.</p><div class="actions">'+[["camara_people","Deputados"],["senado_people","Senadores"],["camara_proposals","Proposições"],["camara_votes","Votações"]].map(([id,name])=>'<button class="secondary sync" data-dataset="'+id+'">Coletar '+name+'</button>').join("")+'</div><p id="sync-status" role="status"></p><small>Processar fila: <code>python -m app.worker</code>. Importação histórica: <code>python -m app.sync --dataset camara_proposals --year 2024 --max-pages 20</code>.</small></section><section class="panel"><h2>Matriz de fontes</h2>'+d.sources.map(s=>sourceCard(s)+'<small>Anos observados: '+e(s.observed_years.join(", ")||"Nenhum")+'. '+e(s.historical_coverage)+'</small>').join("")+'</section><section class="panel"><h2>Execuções recentes</h2>'+ (d.runs.length?'<div class="table-wrap"><table><thead><tr><th>Conjunto</th><th>Estado</th><th>Registros processados</th><th>Início</th><th>Erro</th></tr></thead><tbody>'+d.runs.map(r=>'<tr><td>'+e(r.dataset)+'</td><td>'+e(labels[r.status]||r.status)+'</td><td>'+r.count+'</td><td>'+e(fmt(r.started_at))+'</td><td>'+e(r.error||"—")+'</td></tr>').join("")+'</tbody></table></div>':empty("Nenhuma execução","A base está pronta para receber a primeira coleta."))+'</section><section class="panel"><h2>Fila persistente</h2><pre>'+e(JSON.stringify(d.jobs,null,2))+'</pre><button id="refresh" class="secondary">Atualizar estado</button></section>';
  document.querySelectorAll(".sync").forEach(b=>b.onclick=async()=>{b.disabled=true;try{const r=await api("/api/sync",{dataset:b.dataset.dataset});$("#sync-status").textContent=r.message;}catch(err){$("#sync-status").textContent=err.message;}finally{b.disabled=false;}});
  $("#refresh").onclick=()=>history(token).catch(showError);
@@ -180,27 +190,37 @@ function reports(){
  $("#content").innerHTML='<section class="panel"><h2>Exportação CSV</h2><p>Exportação explícita de uma página de até 100 registros. Para extrair mais registros, avance o número da página. A cobertura continua parcial.</p><form id="report-form" class="filters"><label class="field">Conjunto<select name="kind"><option value="person">Parlamentares</option><option value="proposal">Proposições</option><option value="vote">Votações</option></select></label><label class="field grow">Texto<input name="q" maxlength="200"></label><label class="field">Fonte<select name="source"><option value="">Todas</option><option value="camara">Câmara</option><option value="senado">Senado</option></select></label><label class="field">Ano<input name="year" type="number" min="1800" max="2200"></label><label class="field">Página<input name="page" type="number" value="1" min="1" max="100000"></label><button>Baixar CSV</button></form></section><section class="panel"><h2>Relatório de cobertura</h2><p>Abra o histórico de fontes e use a impressão do navegador para salvar em PDF. Geração automatizada de PDF ainda não está integrada.</p><a class="button secondary" href="#historico">Abrir cobertura</a></section>';
  $("#report-form").onsubmit=ev=>{ev.preventDefault();const p=new URLSearchParams(new FormData(ev.target));p.set("size",100);const a=document.createElement("a");a.href="/api/export?"+p;a.download="observatorio-registros.csv";a.click();};
 }
-async function settings(token){
+async function adminSettings(token){
+ if(!canManage())return settings(token);
  setTitle("Configurações","Estado desta instalação e serviços ainda não configurados.");
- const [d,s]=await Promise.all([api("/api/config"),api("/api/session")]);if(token!==generation)return;
+ const [d,s]=await Promise.all([api("/api/config?technical=1"),api("/api/session")]);if(token!==generation)return;
  csrf=s.user?.csrf||"";updateSessionChrome(s);
  $("#content").innerHTML='<section class="panel"><h2>Acesso à organização</h2>'+(s.user?'<p>'+e(s.user.email)+' · '+e(s.user.tenant)+' · '+e(s.user.role)+'</p><p>Organização: '+e(s.user.tenant_id)+'<br>Plano: '+e(s.plan?.name)+' · '+e(s.plan?.watch_count)+' / '+e(s.plan?.watch_limit??"sem limite definido")+' monitoramentos. Sem cobrança.</p><button id="logout" class="secondary">Sair</button>':'<p>Crie sua organização pelo comando seguro descrito no manual de operação. Não há credenciais padrão.</p><form id="login" class="filters"><label class="field grow">E-mail<input name="email" type="email" autocomplete="username" required></label><label class="field grow">Senha<input name="password" type="password" minlength="12" maxlength="256" autocomplete="current-password" required></label><button>Entrar</button></form>')+'<p id="auth-status" role="status"></p></section><section class="panel"><h2>'+e(d.name)+'</h2><p>'+e(d.mode)+'</p><div class="source"><strong>Assinaturas e checkout</strong><span>'+e(d.billing)+'</span></div><div class="source"><strong>Assistente IA</strong><span>'+e(d.ai)+'</span></div><div class="source"><strong>Organizações e autenticação</strong><span>Autenticação local, papéis e isolamento no servidor</span></div><div class="source"><strong>Marca</strong><span>Configurável pela variável APP_NAME</span></div><div class="source"><strong>Administração</strong><a href="#historico">Monitorar fontes e fila ↗</a></div></section><section class="panel"><h2>Limites de uso</h2><p>Esta versão opera localmente com sessões e organizações. A publicação como SaaS depende de HTTPS, infraestrutura, banco PostgreSQL com RLS, MFA e testes de produção. Nenhum gateway, domínio ou credencial de outro projeto foi reutilizado.</p></section>';
  if($("#login"))$("#login").onsubmit=async ev=>{ev.preventDefault();try{const r=await api("/api/login",Object.fromEntries(new FormData(ev.target)));csrf=r.csrf;await settings(token);}catch(err){$("#auth-status").textContent=err.message;}};
  if($("#logout"))$("#logout").onclick=async()=>{try{await api("/api/logout",{});csrf="";await settings(token);}catch(err){$("#auth-status").textContent=err.message;}};
 }
-function showError(err){$("#content").innerHTML='<div class="error" role="alert">'+e(err.message)+' <a href="#configuracoes">Entrar na conta →</a></div>';}
+async function settings(token){
+ setTitle("Minha conta","Consulte os dados públicos ou entre para acompanhar assuntos do seu interesse.");
+ const s=await api("/api/session");if(token!==generation)return;
+ csrf=s.user?.csrf||"";updateSessionChrome(s);
+ $("#content").innerHTML='<section class="panel"><h2>'+ (s.user?'Sua conta':'Entrar na conta')+'</h2>'+(s.user?'<p>'+e(s.user.email)+'</p><p>'+e(s.user.tenant)+'</p><button id="logout" class="secondary">Sair da conta</button>':'<p>A consulta aos dados públicos não exige senha. Entre com sua conta para usar os recursos de acompanhamento.</p><form id="login" class="filters"><label class="field grow">E-mail<input name="email" type="email" autocomplete="username" required></label><label class="field grow">Senha<input name="password" type="password" minlength="12" maxlength="256" autocomplete="current-password" required></label><button>Entrar</button></form>')+'<p id="auth-status" role="status"></p></section>';
+ if($("#login"))$("#login").onsubmit=async ev=>{ev.preventDefault();try{const r=await api("/api/login",Object.fromEntries(new FormData(ev.target)));csrf=r.csrf;await settings(token);}catch(err){$("#auth-status").textContent=err.message;}};
+ if($("#logout"))$("#logout").onclick=async()=>{try{await api("/api/logout",{});csrf="";await settings(token);}catch(err){$("#auth-status").textContent=err.message;}};
+}
+function showError(err){$("#content").innerHTML='<div class="error" role="alert">'+e(err.message)+' <a href="#conta">Entrar na conta →</a></div>';}
 async function render(){
  if(politicianTimer){clearTimeout(politicianTimer);politicianTimer=null;}
  $("#account-menu").open=false;
  if(drawerOpen)closeNavigationDrawer(false);
  const token=++generation;route=location.hash.slice(1)||"inicio";if(route==="main")route="inicio";page=1;
- const activeHash=route.startsWith("politico/")?"#produtividade":"#"+route;
+ const activeHash=route.startsWith("financeiro")?"#financeiro":route.startsWith("politico/")?"#produtividade":"#"+route;
  document.querySelectorAll("#app-sidebar nav a").forEach(a=>{const active=a.hash===activeHash;a.classList.toggle("active",active);if(active)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current");});
  window.scrollTo(0,0);
  $("#content").textContent="Carregando…";
  try{
+ if(route==="financeiro"||route.startsWith("financeiro/")){if(typeof financialPage!=="function"){setTitle("Fiscalização Financeira","Atualização do serviço necessária");$("#content").innerHTML=empty("Esta instância ainda usa a versão anterior do serviço","Abra a versão atualizada disponibilizada na entrega ou reinicie esta instância para ativar o novo módulo.");return;}await financialPage(route.includes("/")?decodeURIComponent(route.slice(11)):"",token);return;}
  if(route.startsWith("politico/")){await politician(decodeURIComponent(route.slice(9)),token);return;}
- switch(route){case "produtividade":await choosePolitician(token);break;case "inicio":await dashboard(token);break;case "pesquisa":case "parlamentares":await listing("person",token);break;case "projetos":await listing("proposal",token);break;case "votacoes":await listing("vote",token);break;case "historico":await history(token);break;case "monitoramentos":await watches(token);break;case "relatorios":reports();break;case "configuracoes":await settings(token);break;default:setTitle("Página não encontrada","Escolha uma seção no menu.");$("#content").innerHTML=empty("Página não encontrada","Use o menu para continuar.");}}
+ switch(route){case "produtividade":await choosePolitician(token);break;case "inicio":await dashboard(token);break;case "pesquisa":case "parlamentares":await listing("person",token);break;case "projetos":await listing("proposal",token);break;case "votacoes":await listing("vote",token);break;case "historico":await history(token);break;case "monitoramentos":await watches(token);break;case "relatorios":reports();break;case "conta":case "configuracoes":await settings(token);break;case "administracao":await adminSettings(token);break;default:setTitle("Página não encontrada","Escolha uma seção no menu.");$("#content").innerHTML=empty("Página não encontrada","Use o menu para continuar.");}}
  catch(err){if(token===generation)showError(err);}
 }
 
@@ -223,9 +243,9 @@ async function choosePolitician(token){
   const d=await api("/api/search?"+p);if(token!==generation||request!==requestVersion)return;
   const from=d.total?(peoplePage-1)*20+1:0,to=Math.min(peoplePage*20,d.total);
   const rows=d.items.map(r=>{
-   const url="#politico/"+encodeURIComponent(r.id),role=String(r.data.role||"");
-   const origin=role.toLowerCase().includes("não verificado")?"Autoria · mandato não verificado":"Cadastro da Casa";
-   return '<tr><td class="person-name"><a href="'+url+'">'+e(r.data.name)+'</a><small>'+e(role.toLowerCase().includes("não verificado")?"Identificado em autoria":role||"Identidade institucional")+'</small></td><td><span class="house-label">'+e(r.source==="camara"?"Câmara dos Deputados":"Senado Federal")+'</span></td><td class="party-cell">'+e(r.data.party||"Não informado")+'</td><td class="uf-cell">'+e(r.data.uf||"—")+'</td><td><span class="registry-label">'+e(origin)+'</span></td><td class="row-action"><a href="'+url+'" aria-label="Abrir dashboard de '+e(r.data.name)+'">Ver dashboard <span aria-hidden="true">↗</span></a></td></tr>';
+   const url=(r.source==="alesc"?"#financeiro/":"#politico/")+encodeURIComponent(r.id),role=String(r.data.role||"");
+   const origin=role.toLowerCase().includes("financeiro")?"Registro financeiro oficial":role.toLowerCase().includes("não verificado")?"Autoria · mandato não verificado":"Cadastro da Casa";
+   return '<tr><td class="person-name"><a href="'+url+'">'+e(r.data.name)+'</a><small>'+e(role.toLowerCase().includes("financeiro")?"Identificado em registro financeiro":role.toLowerCase().includes("não verificado")?"Identificado em autoria":role||"Identidade institucional")+'</small></td><td><span class="house-label">'+e(({camara:"Câmara dos Deputados",senado:"Senado Federal",alesc:"ALESC"})[r.source]||r.source)+'</span></td><td class="party-cell">'+e(r.data.party||"Não informado")+'</td><td class="uf-cell">'+e(r.data.uf||"—")+'</td><td><span class="registry-label">'+e(origin)+'</span></td><td class="row-action"><a href="'+url+'" aria-label="Abrir dashboard de '+e(r.data.name)+'">Ver dashboard <span aria-hidden="true">↗</span></a></td></tr>';
   }).join("");
   $("#people-options").innerHTML='<div class="directory-toolbar"><div><h2>Parlamentares</h2><p>Selecione um nome para abrir o dashboard individual.</p></div><span class="result-count">'+d.total.toLocaleString("pt-BR")+' registros</span></div>'+(rows?'<div class="table-wrap directory-scroll"><table class="people-table"><caption class="sr-only">Parlamentares encontrados e acesso ao dashboard individual</caption><thead><tr><th scope="col">Parlamentar</th><th scope="col">Casa legislativa</th><th scope="col">Partido</th><th scope="col">UF</th><th scope="col">Origem do registro</th><th scope="col" class="row-action">Acesso</th></tr></thead><tbody>'+rows+'</tbody></table></div>':empty("Nenhum parlamentar encontrado","Altere os filtros. A ausência na base não indica ausência de atuação."))+'<div class="directory-footer"><span>'+from.toLocaleString("pt-BR")+'–'+to.toLocaleString("pt-BR")+' de '+d.total.toLocaleString("pt-BR")+' registros · Página '+peoplePage+' de '+Math.max(1,Math.ceil(d.total/20))+'</span><div class="pagination-actions"><button class="secondary" id="people-prev" '+(peoplePage===1?"disabled":"")+'>← Anterior</button><button class="secondary" id="people-next" '+(to>=d.total?"disabled":"")+'>Próxima →</button></div></div><p class="directory-note">Identidades de Casas diferentes permanecem separadas. O cadastro na autoria de uma proposição não comprova o exercício atual de mandato.</p>';
   $("#people-options").removeAttribute("aria-busy");
@@ -237,7 +257,7 @@ async function choosePolitician(token){
 async function politician(id,token){
  setTitle("Atividade parlamentar","Carregando indicadores e evidências da fonte oficial.");
  let currentPage=1,params=new URLSearchParams({id,size:"20"});
- $("#content").innerHTML='<section class="panel"><form id="activity-filters" class="filters"><label class="field">Apresentados a partir de<input type="date" name="start"></label><label class="field">Apresentados até<input type="date" name="end"></label><label class="field grow">Exibir<select name="category"><option value="all">Todas as proposições</option><option value="projects">Projetos e PECs</option><option value="approved">Projetos com aprovação em etapa</option><option value="norms">Projetos com norma informada</option></select></label><button>Aplicar período</button><button type="button" class="secondary" id="refresh-politician">Atualizar painel</button></form></section><div id="activity-body">Consultando registros…</div>';
+ $("#content").innerHTML=(typeof financeTabs==="function"?financeTabs(id,"activity"):"")+'<section class="panel"><form id="activity-filters" class="filters"><label class="field">Apresentados a partir de<input type="date" name="start"></label><label class="field">Apresentados até<input type="date" name="end"></label><label class="field grow">Exibir<select name="category"><option value="all">Todas as proposições</option><option value="projects">Projetos e PECs</option><option value="approved">Projetos com aprovação em etapa</option><option value="norms">Projetos com norma informada</option></select></label><button>Aplicar período</button><button type="button" class="secondary" id="refresh-politician">Atualizar painel</button></form></section><div id="activity-body">Consultando registros…</div>';
  $("#activity-filters").onsubmit=ev=>{ev.preventDefault();currentPage=1;load().catch(showError);};
  $("#refresh-politician").onclick=()=>load().catch(showError);
  async function load(){
@@ -260,6 +280,11 @@ async function politician(id,token){
 async function automaticPanel(data,token){
  if(!data || token!==generation)return;
  updateSyncChrome(data);
+ if(!canManage()){
+ const section=document.createElement("section");section.className="panel";
+ section.innerHTML='<h2>Atualização dos dados</h2><p>'+e(data.note)+'</p><p>'+(data.worker_online?'O serviço de atualização está ativo.':'Não foi possível confirmar uma atualização recente. Os registros já encontrados continuam disponíveis.')+'</p>';
+ $("#content").prepend(section);return;
+ }
  const section=document.createElement("section");section.className="panel";
  section.innerHTML='<div class="panel-head"><h2>Atualização automática</h2><span class="tag">'+(data.worker_online?"Processo ativo":"Sem sinal recente")+'</span></div><p>Consulta periódica das fontes integradas, sem limite fixo de páginas. O cursor é preservado após reinícios. '+e(data.note)+'</p><div class="actions">'+Object.entries(data.states).map(([state,n])=>'<span class="tag">'+e(labels[state]||state)+': '+n+'</span>').join("")+'</div><div class="table-wrap"><table><thead><tr><th>Consulta / escopo</th><th>Estado</th><th>Páginas</th><th>Itens</th><th>Última coleta</th><th>Falha</th></tr></thead><tbody>'+data.streams.map(s=>'<tr><td>'+e(s.key)+'<p>'+e(s.scope)+'</p></td><td>'+e(labels[s.state]||s.state)+'</td><td>'+s.pages+'</td><td>'+s.items+'</td><td>'+e(fmt(s.last_success))+'</td><td>'+e(s.error||"—")+'</td></tr>').join("")+'</tbody></table></div><p>O processamento histórico pode levar tempo. Fontes estaduais, municipais e conjuntos ainda não integrados não são apresentados como completos.</p>';
  $("#content").prepend(section);
