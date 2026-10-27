@@ -153,6 +153,16 @@ class HTTP(unittest.TestCase):
             if path=='/api/financial/coverage':self.assertEqual(data['jobs'],[])
             with self.assertRaises(urllib.error.HTTPError) as cm:self.request(path+'?technical=1')
             self.assertEqual(cm.exception.code,401)
+    def test_added_analytics_endpoints_and_permissions(self):
+        for path in ['/api/economy','/api/governments','/api/rankings','/api/rankings?group=party','/api/source-status','/api/assistant?q=PIB','/analytics.js']:
+            with self.request(path) as response:self.assertEqual(response.status,200)
+        for path in ['/api/economy?technical=1','/api/source-status?technical=1']:
+            with self.assertRaises(urllib.error.HTTPError) as cm:self.request(path)
+            self.assertEqual(cm.exception.code,401)
+        with self.assertRaises(urllib.error.HTTPError) as cm:self.request('/api/economy/sync',{})
+        self.assertEqual(cm.exception.code,403)
+        for form,signature in [('csv',b'\xef\xbb\xbf'),('xlsx',b'PK'),('pdf',b'%PDF'),('json',b'{')]:
+            with self.request('/api/analytics/export?module=economy&indicator=ipca_month&format='+form) as response:self.assertTrue(response.read().startswith(signature))
     def test_static_assets_and_security_headers(self):
         for path in ["/","/app.js","/financial.js","/style.css"]:
             with self.request(path) as r:

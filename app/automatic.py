@@ -10,7 +10,7 @@ APPROVAL_CODES={"237","238","239","240","244","1235","1518","1519"}
 SENATE_APPROVALS={"APROVADA_EM_COMISSAO_TERMINATIVA","APROVADA_NO_PLENARIO",
  "APROVADA_PARCIALMENTE","APROVADO_NA_INTEGRA","APROVADO_PLV"}
 CAMARA_CODES_URL=CAMARA+"referencias/proposicoes/codTipoTramitacao"
-def add_stream(db,key,source,mode,url,target=None,priority=50,scope="",refresh=21600):
+def add_stream(db,key,source,mode,url,target=None,priority=50,scope="",refresh=600):
     validate_url(url)
     db.execute("""INSERT OR IGNORE INTO sync_streams(key,source,mode,target,initial_url,next_url,priority,scope,refresh_seconds,next_due)
      VALUES(?,?,?,?,?,?,?,?,?,?)""",(key,source,mode,target,url,url,priority,scope,refresh,time.time()))
@@ -34,7 +34,7 @@ def seed(db,today=None):
         if not 1800<=start<=today.year:raise ValueError("Ano inicial automático inválido")
         for year in range(today.year,start-1,-1):
             url=(CAMARA+"proposicoes?"+urllib.parse.urlencode({"ano":year,"itens":100,"pagina":1}) if source=="camara" else SENADO+"processo?ano="+str(year))
-            add_stream(db,f"{source}:proposals:{year}",source,"proposals",url,priority=40+min(today.year-year,100),scope=f"Ano de identificação {year}; histórico da fonte pode conter lacunas",refresh=21600 if year>=today.year-1 else 2592000)
+            add_stream(db,f"{source}:proposals:{year}",source,"proposals",url,priority=40+min(today.year-year,100),scope=f"Ano de identificação {year}; histórico da fonte pode conter lacunas",refresh=600 if year>=today.year-1 else 2592000)
     first=int(os.environ.get("AUTO_VOTES_START_YEAR","2023"))
     if not 1800<=first<=today.year:raise ValueError("Ano inicial de votações inválido")
     for year in range(today.year,first-1,-1):
@@ -42,9 +42,10 @@ def seed(db,today=None):
             if (year,month)>(today.year,today.month):continue
             start=date(year,month,1);end=min(date(year,month,calendar.monthrange(year,month)[1]),today)
             url=CAMARA+"votacoes?"+urllib.parse.urlencode({"dataInicio":start.isoformat(),"dataFim":end.isoformat(),"itens":100,"pagina":1})
-            add_stream(db,f"camara:votes:{year}-{month:02}","camara","votes",url,priority=35 if year==today.year else 90,scope=f"Votações Câmara {start} a {end}",refresh=21600 if end==today else 2592000)
+            add_stream(db,f"camara:votes:{year}-{month:02}","camara","votes",url,priority=35 if year==today.year else 90,scope=f"Votações Câmara {start} a {end}",refresh=600 if end==today else 2592000)
             # The current month's end advances with the calendar, without discarding an active cursor.
             db.execute("UPDATE sync_streams SET initial_url=? WHERE key=?",(url,f"camara:votes:{year}-{month:02}"))
+    db.execute("UPDATE sync_streams SET refresh_seconds=600 WHERE key IN ('camara:people','senado:people',?,?)",(f"camara:proposals:{today.year}",f"senado:proposals:{today.year}"))
     # Backfill relations for already persisted people after an upgrade.
     for row in db.execute("SELECT id FROM records WHERE kind='person' AND source IN ('camara','senado')").fetchall():
         author_stream(db,row["id"])
@@ -233,14 +234,14 @@ def status(db):
     beat=db.execute("SELECT MAX(seen_at) FROM sync_heartbeats").fetchone()[0]
     counts={r["state"]:r["n"] for r in db.execute("SELECT state,COUNT(*) n FROM sync_streams GROUP BY state")}
     rows=[dict(r) for r in db.execute("SELECT key,source,mode,target,state,pages,items,last_success,completed_at,next_due,scope,CASE WHEN state='running' THEN NULL ELSE error END error FROM sync_streams ORDER BY last_attempt DESC LIMIT 30")]
-    return dict(enabled=os.environ.get("AUTO_SYNC_ENABLED","1")!="0",worker_online=bool(beat and time.time()-beat<180),last_heartbeat=beat,states=counts,streams=rows,interval_hours=6,note="Consulta concluída refere-se somente ao escopo da consulta. Não comprova cobertura nacional completa.")
+    return dict(enabled=os.environ.get("AUTO_SYNC_ENABLED","1")!="0",worker_online=bool(beat and time.time()-beat<180),last_heartbeat=beat,states=counts,streams=rows,interval_hours=1/6,interval_seconds=600,note="Consulta concluída refere-se somente ao escopo da consulta. Não comprova cobertura nacional completa.")
 def run(stop=None):
     stop=stop or threading.Event();worker="auto:"+str(os.getpid())+":"+uuid.uuid4().hex[:8];seeded=0
     while not stop.is_set():
         error=None
         try:
             with connect() as db:
-                if time.time()-seeded>3600:seed(db);seeded=time.time()
+                if time.time()-seeded>600:seed(db);seeded=time.time()
                 db.execute("INSERT OR REPLACE INTO sync_heartbeats VALUES(?,?,NULL)",(worker,time.time()));db.commit()
                 busy=step(db)
         except Exception as exc:error=type(exc).__name__+": "+str(exc)[:250];busy=False

@@ -2,6 +2,7 @@
 import io,json,textwrap,zipfile
 from xml.sax.saxutils import escape
 from .db import now
+from .calculations import brasilia
 from .financial import MISSING
 
 COLUMNS=[('id','Registro'),('person_id','Identidade oficial'),('person_name','Parlamentar / conta'),('institution','Instituição'),('mandate','Legislatura informada'),('year','Ano'),('month','Mês'),('category','Categoria'),('description','Descrição original'),('supplier','Fornecedor'),('amount','Valor BRL'),('gross','Documento BRL'),('disallowed','Glosa BRL'),('nature','Natureza'),('verification','Verificação'),('verification_note','Critério'),('document_date','Data documento'),('expense_date','Data despesa'),('payment_date','Data pagamento'),('document_number','Documento'),('source_url','Fonte oficial'),('receipt_url','Comprovante'),('collected_at','Coleta UTC'),('source_updated_at','Atualização da fonte')]
@@ -11,7 +12,7 @@ def val(row,key):
     return str(v) if v is not None else MISSING if key in {'amount','gross','disallowed'} else 'Não informado'
 
 def xlsx_export(result):
-    rows=[['Fiscalização Financeira — cobertura parcial'],['Emissão UTC',now()],['Filtros',json.dumps(result['filters'],ensure_ascii=False)],['Critério',result['methodology']],['Registros exportados',str(len(result['items']))],[label for _,label in COLUMNS]]
+    rows=[['Fiscalização Financeira — cobertura parcial'],['Emissão Horário de Brasília',brasilia(),'Emissão UTC',now()],['Filtros',json.dumps(result['filters'],ensure_ascii=False)],['Critério',result['methodology']],['Registros exportados',str(len(result['items']))],[label for _,label in COLUMNS]]
     rows += [[val(r,key) for key,_ in COLUMNS] for r in result['items']]
     def cell(v):
         # inlineStr prevents spreadsheet formula execution, including values starting =.
@@ -30,7 +31,7 @@ def xlsx_export(result):
 
 def pdf_export(result):
     if len(result['items'])>1000:raise ValueError('Refine a seleção para PDF de até 1000 registros')
-    lines=['Fiscalização Financeira — registros oficiais','Emissão UTC: '+now(),'Cobertura parcial. Valores em BRL. Não representa custo total.','Filtros: '+json.dumps(result['filters'],ensure_ascii=False),result['methodology'],'']
+    lines=['Fiscalização Financeira — registros oficiais','Emissão Horário de Brasília: '+brasilia()+' | UTC: '+now(),'Cobertura parcial. Valores em BRL. Não representa custo total.','Filtros: '+json.dumps(result['filters'],ensure_ascii=False),result['methodology'],'']
     for r in result['items']:
         lines.append('REGISTRO '+r['id'])
         for key,label in COLUMNS[1:]:lines.append(label+': '+val(r,key))

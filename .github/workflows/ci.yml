@@ -17,4 +17,5 @@ jobs:
       - run: python -m unittest discover -s tests -v
       - run: node --check web/app.js
       - run: node --check web/financial.js
+      - run: node --check web/analytics.js
       - run: docker build -t observatorio:test .
